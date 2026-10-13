@@ -36,7 +36,96 @@ const weekdayAbbreviations = weekdayNames.map((day) => day.slice(0, 3))
 const legacyHighlightColors: Record<string, string> = {
   leaf: '#82a486', coral: '#df987f', sky: '#8aabb7', gold: '#d5bd70',
 }
-const todayKey = new Date().toISOString().slice(0, 10)
+const numericLimits = {
+  startMonth: [0, 11],
+  startYear: [1, 9999],
+  duration: [1, 18],
+  weekStartsOn: [0, 6],
+  customWidth: [80, 1200],
+  customHeight: [80, 1200],
+  dayNumberSize: [7, 18],
+} as const
+const paperSizes = ['A3', 'A4', 'A5', 'Letter', 'Legal', 'Ledger', 'Custom'] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isDateKey(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value
+}
+
+function normalizeNoteColor(value: unknown) {
+  if (typeof value !== 'string') return '#fffefa'
+  return legacyHighlightColors[value] ?? (/^#[\da-f]{6}$/i.test(value) ? value : '#fffefa')
+}
+
+function normalizePlannerData(data: unknown): Planner {
+  if (!isRecord(data)) throw new Error('This file does not look like a planner backup.')
+  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'accentColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', 'notes']
+  if (!knownKeys.some((key) => key in data)) throw new Error('This file does not look like a planner backup.')
+
+  const planner = defaultPlanner()
+  for (const key of Object.keys(numericLimits) as (keyof typeof numericLimits)[]) {
+    const value = data[key]
+    if (value === undefined) continue
+    const [minimum, maximum] = numericLimits[key]
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
+      throw new Error(`Invalid planner setting: ${key}.`)
+    }
+    planner[key] = value
+  }
+
+  if (data.countryCode !== undefined) {
+    if (typeof data.countryCode !== 'string' || !/^[A-Za-z]{2}$/.test(data.countryCode)) throw new Error('Invalid planner country code.')
+    planner.countryCode = data.countryCode.toUpperCase()
+  }
+  if (data.regionCode !== undefined) {
+    if (typeof data.regionCode !== 'string') throw new Error('Invalid planner region.')
+    planner.regionCode = data.regionCode
+  }
+  if (data.moveWeekendHolidays !== undefined) {
+    if (typeof data.moveWeekendHolidays !== 'boolean') throw new Error('Invalid weekend holiday setting.')
+    planner.moveWeekendHolidays = data.moveWeekendHolidays
+  } else {
+    planner.moveWeekendHolidays = planner.countryCode === 'GB'
+  }
+  if (data.removedHolidayDates !== undefined) {
+    if (!Array.isArray(data.removedHolidayDates) || !data.removedHolidayDates.every(isDateKey)) throw new Error('Invalid removed holiday dates.')
+    planner.removedHolidayDates = data.removedHolidayDates
+  }
+  if (data.paper !== undefined) {
+    if (typeof data.paper !== 'string' || !paperSizes.includes(data.paper as typeof paperSizes[number])) throw new Error('Invalid paper size.')
+    planner.paper = data.paper as Planner['paper']
+  }
+  if (data.orientation !== undefined) {
+    if (data.orientation !== 'landscape' && data.orientation !== 'portrait') throw new Error('Invalid paper orientation.')
+    planner.orientation = data.orientation
+  }
+  for (const key of ['accentColor', 'emptyCellColor', 'weekendColor', 'holidayColor'] as const) {
+    const value = data[key]
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw new Error(`Invalid planner color: ${key}.`)
+    planner[key] = value
+  }
+  if (data.notes !== undefined) {
+    if (!isRecord(data.notes)) throw new Error('Invalid planner notes.')
+    planner.notes = Object.fromEntries(Object.entries(data.notes).map(([date, value]) => {
+      if (!isDateKey(date) || !isRecord(value) || typeof value.text !== 'string' || value.text.trim().length > 160) {
+        throw new Error('Invalid planner note.')
+      }
+      return [date, { text: value.text.trim(), color: normalizeNoteColor(value.color) }]
+    }))
+  }
+  return planner
+}
+
+function clampNumber(value: string, minimum: number, maximum: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.trunc(Math.max(minimum, Math.min(maximum, parsed))) : minimum
+}
 
 function detectBrowserCountry() {
   if (typeof navigator === 'undefined') return 'GB'
@@ -80,17 +169,7 @@ function defaultPlanner(): Planner {
 function readSavedPlanner(): Planner {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<Planner>
-      const planner = { ...defaultPlanner(), ...saved }
-      if (typeof saved.moveWeekendHolidays !== 'boolean') planner.moveWeekendHolidays = planner.countryCode === 'GB'
-      if (!Array.isArray(saved.removedHolidayDates)) planner.removedHolidayDates = []
-      planner.notes = Object.fromEntries(Object.entries(planner.notes).map(([date, note]) => [date, {
-        ...note,
-        color: legacyHighlightColors[note.color] ?? (/^#[\da-f]{6}$/i.test(note.color) ? note.color : '#fffefa'),
-      }]))
-      return planner
-    }
+    if (raw) return normalizePlannerData(JSON.parse(raw))
   } catch {
     // Keep the app usable when storage is disabled or its data is malformed.
   }
@@ -110,6 +189,7 @@ function App() {
   const [editingDate, setEditingDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<Note>({ text: '', color: '#fffefa' })
   const fileInput = useRef<HTMLInputElement>(null)
+  const holidayRequestId = useRef(0)
 
   useEffect(() => {
     try {
@@ -213,6 +293,11 @@ function App() {
     setPlanner((current) => ({ ...current, [key]: value }))
   }
 
+  function invalidateHolidayRequest() {
+    holidayRequestId.current += 1
+    setLoadingHolidays(false)
+  }
+
   function editDate(key: string) {
     setEditingDate(key)
     setDraft(planner.notes[key] ?? { text: '', color: '#fffefa' })
@@ -237,6 +322,7 @@ function App() {
     }
     const years = new Set(months.map(({ year }) => year))
     if (planner.startMonth === 0) years.add(months[0].year - 1)
+    const requestId = ++holidayRequestId.current
     setLoadingHolidays(true)
     setHolidayStatus('')
     try {
@@ -245,14 +331,15 @@ function App() {
         if (!response.ok) throw new Error(`Holiday service returned ${response.status} for ${year}.`)
         return await response.json() as Holiday[]
       }))
+      if (requestId !== holidayRequestId.current) return
       const all = results.flat().filter((holiday) => holiday.holidayTypes?.includes('Public'))
       setAllHolidays(all)
       setHolidayStatus(`Loaded public holidays for ${country}. Choose a region to filter them.`)
       update('countryCode', country)
     } catch (error) {
-      setHolidayStatus(error instanceof Error ? error.message : 'Could not load public holidays.')
+      if (requestId === holidayRequestId.current) setHolidayStatus(error instanceof Error ? error.message : 'Could not load public holidays.')
     } finally {
-      setLoadingHolidays(false)
+      if (requestId === holidayRequestId.current) setLoadingHolidays(false)
     }
   }
 
@@ -269,18 +356,9 @@ function App() {
   async function importPlanner(file?: File) {
     if (!file) return
     try {
-      const data = JSON.parse(await file.text()) as Partial<Planner>
-      if (!Number.isInteger(data.startMonth) || !Number.isInteger(data.startYear) || !Number.isInteger(data.duration) || !data.notes || typeof data.notes !== 'object') {
-        throw new Error('This file does not look like a planner backup.')
-      }
-      setPlanner({
-        ...defaultPlanner(),
-        ...data,
-        notes: Object.fromEntries(Object.entries(data.notes as Record<string, Note>).map(([date, note]) => [date, {
-          ...note,
-          color: legacyHighlightColors[note.color] ?? (/^#[\da-f]{6}$/i.test(note.color) ? note.color : '#fffefa'),
-        }])),
-      } as Planner)
+      const planner = normalizePlannerData(JSON.parse(await file.text()))
+      invalidateHolidayRequest()
+      setPlanner(planner)
       setAllHolidays([])
       setHolidayStatus('Planner backup restored.')
     } catch (error) {
@@ -306,6 +384,7 @@ function App() {
 
   function clearAll() {
     if (!window.confirm('Clear all planner settings, notes, holiday overrides, and loaded holiday data?')) return
+    invalidateHolidayRequest()
     setPlanner(defaultPlanner())
     setAllHolidays([])
     setHolidayStatus('')
@@ -331,7 +410,7 @@ function App() {
           return (
               <td className={`date-cell ${weekday === 0 || weekday === 6 ? 'is-weekend' : ''} ${holiday ? 'has-holiday' : ''}`} key={column}>
               <button
-                className={`date-mark ${holiday ? 'is-holiday' : ''} ${note ? 'marked' : ''} ${key === todayKey ? 'today' : ''}`}
+                className={`date-mark ${holiday ? 'is-holiday' : ''} ${note ? 'marked' : ''}`}
                 style={note ? { '--highlight-color': note.color } as CSSProperties : undefined}
                 type="button"
                 title={[note?.text, ...dayHolidays.map((entry) => entry.name)].filter(Boolean).join(' | ') || `Add a note for ${key}`}
@@ -384,11 +463,11 @@ function App() {
                 </select>
               </label>
               <label>Year
-                <input type="number" min="1" max="9999" value={planner.startYear} onChange={(event) => update('startYear', Math.max(1, Number(event.target.value)))} />
+                <input type="number" min="1" max="9999" value={planner.startYear} onChange={(event) => update('startYear', clampNumber(event.target.value, 1, 9999))} />
               </label>
             </div>
             <label>Duration <span className="inline-value">{planner.duration} months</span>
-              <input className="duration-range" type="range" min="1" max="18" value={planner.duration} onChange={(event) => update('duration', Number(event.target.value))} />
+              <input className="duration-range" type="range" min="1" max="18" value={planner.duration} onChange={(event) => update('duration', clampNumber(event.target.value, 1, 18))} />
               <span className="range-ends"><span>1 month</span><span>18 months</span></span>
             </label>
             <label>Week starts on
@@ -402,6 +481,7 @@ function App() {
             <legend>PUBLIC HOLIDAYS</legend>
             <label>Country
               <select value={planner.countryCode} onChange={(event) => {
+                invalidateHolidayRequest()
                 update('countryCode', event.target.value)
                 update('regionCode', '')
                 update('moveWeekendHolidays', event.target.value === 'GB')
@@ -444,8 +524,8 @@ function App() {
               </label>
             </div>
             {planner.paper === 'Custom' && <div className="field-pair custom-size">
-              <label>Width (mm)<input type="number" min="80" max="1200" value={planner.customWidth} onChange={(event) => update('customWidth', Number(event.target.value))} /></label>
-              <label>Height (mm)<input type="number" min="80" max="1200" value={planner.customHeight} onChange={(event) => update('customHeight', Number(event.target.value))} /></label>
+              <label>Width (mm)<input type="number" min="80" max="1200" value={planner.customWidth} onChange={(event) => update('customWidth', clampNumber(event.target.value, 80, 1200))} /></label>
+              <label>Height (mm)<input type="number" min="80" max="1200" value={planner.customHeight} onChange={(event) => update('customHeight', clampNumber(event.target.value, 80, 1200))} /></label>
             </div>}
           </fieldset>
           <fieldset className="control-group accent-settings">
@@ -463,7 +543,7 @@ function App() {
               <input type="color" value={planner.holidayColor} onChange={(event) => update('holidayColor', event.target.value)} />
             </label>
             <label>Day number size <span className="inline-value">{planner.dayNumberSize}px</span>
-              <input className="duration-range" type="range" min="7" max="18" step="1" value={planner.dayNumberSize} onChange={(event) => update('dayNumberSize', Number(event.target.value))} />
+              <input className="duration-range" type="range" min="7" max="18" step="1" value={planner.dayNumberSize} onChange={(event) => update('dayNumberSize', clampNumber(event.target.value, 7, 18))} />
               <span className="range-ends"><span>7px</span><span>18px</span></span>
             </label>
           </fieldset>
