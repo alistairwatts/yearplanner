@@ -33,6 +33,7 @@ As a planner, I can attach a short note and a chosen highlight color to a date, 
 
 Acceptance criteria:
 - Clicking a date opens an accessible editor for that date.
+- Clicking anywhere in a date cell, not just on its number, opens the note editor.
 - Note text is trimmed when saved and limited to 160 characters.
 - A note and its color appear in the corresponding calendar cell; text is legible and clipped or truncated rather than overflowing into another cell.
 - Saving an empty note with the default color removes the note.
@@ -72,7 +73,7 @@ As a planner, I can choose a standard or custom paper size and orientation and p
 Acceptance criteria:
 - Support A3, A4, A5, Letter, Legal, Ledger, and custom dimensions from 80 through 1200 mm; support portrait and landscape.
 - Generate matching `@page` dimensions with 5 mm margins.
-- Print the planner, not the application controls, legend, or browser-only controls.
+- Print the planner, not the application controls or browser-only controls.
 - The calendar grid uses the available height in its print area without leaving an unexplained gap beneath it.
 - Date content is aligned to the top of each cell, and every date cell retains enough height for its day number to remain visible in print.
 - Day numbers remain visible and sit at the top-right of their own cells in print. The last month, including its day numbers, must not be clipped at the page edge.
@@ -95,22 +96,47 @@ Acceptance criteria:
 - Import clears loaded holiday records; the user can load them again.
 - A confirmed “Clear all” resets configuration and notes, holiday overrides, loaded holidays, transient errors, and date editing state. Canceling the confirmation changes nothing.
 
+### Story G: Title the planner
+
+As a planner, I can replace the default title with my own.
+
+Acceptance criteria:
+- The sheet shows a title above the table. By default it is the date range, e.g. "March 2026 — April 2027".
+- A "Use a custom title" checkbox (default off) reveals a text input (maximum 80 characters; the placeholder shows the default title). When checked and the text is non-blank it replaces the default title; when unchecked or blank the default is shown.
+- The checkbox state and text persist and are included in backups.
+
+### Story H: Colour themes
+
+As a planner, I can choose or build a colour scheme, including the table heading colour.
+
+Acceptance criteria:
+- A theme is five colours: accent (month labels, title, buttons), table heading background, empty cells, weekend cells, and holiday cells.
+- Built-in themes: Monochrome (black, white, greys; the default), Ocean (blues with grey), and Sunset (plum, apricot, coral).
+- Selecting a theme copies its colours into the planner. Each colour has a colour input; changing any colour switches the theme to "Custom".
+- Text on the table heading and on accent-coloured surfaces is black or white, whichever has the higher WCAG contrast ratio against the background (white when relative luminance is below 0.179).
+- When "Custom" is selected the user can name and save the current colours. Saving an existing name overwrites it. Saved themes appear under "Saved" in the theme list, can be deleted, and persist in local-storage key `year-planner:themes:v1`. They are not part of backups. Malformed stored themes are ignored.
+- A planner referring to a saved theme that no longer exists is treated as "Custom".
+
 ## 4. Configuration and Persistence
 
 - Persist planner configuration under local-storage key `year-planner:v1`.
-- Configuration includes start month/year, duration, week start, country/region, weekend movement, removed holiday dates, paper/orientation/custom dimensions, colors, day-number size, and date-keyed notes.
-- Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, and the current palette and typography specified by the UI.
+- Configuration includes start month/year, duration, week start, country/region, weekend movement, removed holiday dates, paper/orientation/custom dimensions, the five theme colours, theme name, custom title settings, day-number size, and date-keyed notes.
+- Saved custom themes persist separately under `year-planner:themes:v1`.
+- Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, the Monochrome theme, default title, and 10px day numbers.
+- Backups lacking theme fields import as the Monochrome defaults; backups with colours but no theme name import as "Custom" with the legacy heading colour `#f0f1ef`.
 - Treat local storage as optional: malformed or unavailable storage must not prevent the app from starting. Show a useful status when changes cannot be saved.
 - Migrate older saved or imported named highlight colors (`leaf`, `coral`, `sky`, `gold`) to their corresponding hex colors. Preserve valid six-digit hex; normalize invalid colors to `#fffefa`.
 - Do not persist fetched holiday records as part of the planner backup.
 
 ## 5. Visual and Interaction Requirements
 
-- Keep the calendar preview central and allow horizontal scrolling on narrow screens rather than shrinking the cells until they are unusable.
+- The configuration sidebar is split into four tabs (Calendar: title and date range; Holidays; Page: paper and layout; Style: theme, colours, day-number size). It fills the viewport height beside the calendar, scrolls internally, and keeps the status message and save indicator pinned at its bottom. On narrow screens it stacks above the calendar.
+- The on-screen planner is a sheet with the exact aspect ratio of the selected paper and orientation. It is laid out at true paper size (including the 5 mm margin) and scaled to fit the available width (scale limited to 0.5–2; below that the preview scrolls horizontally). It uses the same styles as print, so it shows what will be printed. Date cells remain clickable.
+- Keep the calendar preview central.
 - Use explicit, stable table geometry; date buttons fill cells and do not cause row or column shifts.
 - Distinguish weekends, public holidays, and notes while preserving contrast. Holiday fill takes precedence over weekend fill. Do not specially format the current date.
 - Do not rely on color alone to communicate an interaction; date buttons have accessible names, and the note editor has dialog semantics and a clear label.
-- The print view hides controls and the legend, uses the configured paper orientation/size, retains day numbers, and does not clip the final month.
+- The print view hides controls, uses the configured paper orientation/size, retains day numbers, and does not clip the final month.
 - External web fonts may enhance the visual design, but fallbacks must remain readable if font loading fails.
 
 ## 6. Technical Requirements
@@ -134,6 +160,8 @@ Before calling a rebuild complete:
 6. Verify weekend substitute collisions: a weekend holiday skips weekends, actual holidays, and prior substitute allocations; same-source-date holidays share a substitute.
 7. Under print media, verify that day numbers remain visible at the top-right of each cell, date content is top-aligned, every date cell has enough room to show its number, the last month is not clipped, and the grid fills its available area without a visible gap.
 8. If actual user print output differs from automated print emulation, reproduce using the target browser and paper/orientation settings before changing layout rules.
+9. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Save, reload, select, and delete a named theme.
+10. Verify the sheet's aspect ratio matches the paper for each size and orientation and that print output matches the on-screen sheet.
 
 ## 8. Out of Scope
 

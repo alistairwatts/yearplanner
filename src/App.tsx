@@ -9,7 +9,16 @@ type Holiday = {
 }
 type DisplayHoliday = Holiday & { actualDate: string; isSubstitute: boolean }
 type CountryOption = { countryCode: string; name: string }
-type Planner = {
+type Palette = {
+  accentColor: string
+  headerColor: string
+  emptyCellColor: string
+  weekendColor: string
+  holidayColor: string
+}
+type SavedTheme = { name: string; palette: Palette }
+type Tab = 'calendar' | 'holidays' | 'page' | 'style'
+type Planner = Palette & {
   startMonth: number
   startYear: number
   duration: number
@@ -22,15 +31,26 @@ type Planner = {
   orientation: 'landscape' | 'portrait'
   customWidth: number
   customHeight: number
-  accentColor: string
-  emptyCellColor: string
-  weekendColor: string
-  holidayColor: string
   dayNumberSize: number
+  useCustomTitle: boolean
+  title: string
+  theme: string
   notes: Record<string, Note>
 }
 
 const STORAGE_KEY = 'year-planner:v1'
+const THEMES_KEY = 'year-planner:themes:v1'
+const paletteKeys = ['accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor'] as const
+const paletteLabels: Record<keyof Palette, string> = {
+  accentColor: 'Accent', headerColor: 'Table heading', emptyCellColor: 'Empty cells', weekendColor: 'Weekends', holidayColor: 'Holidays',
+}
+const presetThemes: { id: string; name: string; palette: Palette }[] = [
+  { id: 'monochrome', name: 'Monochrome', palette: { accentColor: '#222222', headerColor: '#d4d4d4', emptyCellColor: '#f2f2f2', weekendColor: '#e3e3e3', holidayColor: '#bcbcbc' } },
+  { id: 'ocean', name: 'Ocean', palette: { accentColor: '#1f4e79', headerColor: '#b9d2e8', emptyCellColor: '#eef3f7', weekendColor: '#dce5ec', holidayColor: '#9dc0df' } },
+  { id: 'sunset', name: 'Sunset', palette: { accentColor: '#a8436a', headerColor: '#f5c08a', emptyCellColor: '#fbf4ec', weekendColor: '#f6e3d5', holidayColor: '#f0a898' } },
+]
+const maxTitleLength = 80
+const maxThemeNameLength = 40
 const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const weekdayAbbreviations = weekdayNames.map((day) => day.slice(0, 3))
 const legacyHighlightColors: Record<string, string> = {
@@ -46,6 +66,36 @@ const numericLimits = {
   dayNumberSize: [7, 18],
 } as const
 const paperSizes = ['A3', 'A4', 'A5', 'Letter', 'Legal', 'Ledger', 'Custom'] as const
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
+}
+
+// Picks black or white text, whichever contrasts more with the background.
+function inkFor(hex: string) {
+  const [red, green, blue] = [1, 3, 5].map((index) => {
+    const channel = parseInt(hex.slice(index, index + 2), 16) / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  return luminance < 0.179 ? '#ffffff' : '#000000'
+}
+
+function pickPalette(source: Palette): Palette {
+  return Object.fromEntries(paletteKeys.map((key) => [key, source[key]])) as Palette
+}
+
+function readSavedThemes(): SavedTheme[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(THEMES_KEY) ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is SavedTheme => isRecord(item) && typeof item.name === 'string' && item.name.length > 0
+      && isRecord(item.palette) && paletteKeys.every((key) => isHexColor((item.palette as Record<string, unknown>)[key])))
+      .map((item) => ({ name: item.name.slice(0, maxThemeNameLength), palette: pickPalette(item.palette) }))
+  } catch {
+    return []
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -64,7 +114,7 @@ function normalizeNoteColor(value: unknown) {
 
 function normalizePlannerData(data: unknown): Planner {
   if (!isRecord(data)) throw new Error('This file does not look like a planner backup.')
-  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'accentColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', 'notes']
+  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', 'useCustomTitle', 'title', 'theme', 'notes']
   if (!knownKeys.some((key) => key in data)) throw new Error('This file does not look like a planner backup.')
 
   const planner = defaultPlanner()
@@ -104,11 +154,29 @@ function normalizePlannerData(data: unknown): Planner {
     if (data.orientation !== 'landscape' && data.orientation !== 'portrait') throw new Error('Invalid paper orientation.')
     planner.orientation = data.orientation
   }
-  for (const key of ['accentColor', 'emptyCellColor', 'weekendColor', 'holidayColor'] as const) {
+  let hasColors = false
+  for (const key of paletteKeys) {
     const value = data[key]
     if (value === undefined) continue
-    if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw new Error(`Invalid planner color: ${key}.`)
+    if (!isHexColor(value)) throw new Error(`Invalid planner color: ${key}.`)
     planner[key] = value
+    hasColors = true
+  }
+  if (hasColors) {
+    planner.theme = 'custom'
+    if (data.headerColor === undefined) planner.headerColor = '#f0f1ef'
+  }
+  if (data.theme !== undefined) {
+    if (typeof data.theme !== 'string' || data.theme.length > maxThemeNameLength + 6) throw new Error('Invalid planner theme.')
+    planner.theme = data.theme
+  }
+  if (data.useCustomTitle !== undefined) {
+    if (typeof data.useCustomTitle !== 'boolean') throw new Error('Invalid custom title setting.')
+    planner.useCustomTitle = data.useCustomTitle
+  }
+  if (data.title !== undefined) {
+    if (typeof data.title !== 'string' || data.title.length > maxTitleLength) throw new Error('Invalid planner title.')
+    planner.title = data.title
   }
   if (data.notes !== undefined) {
     if (!isRecord(data.notes)) throw new Error('Invalid planner notes.')
@@ -157,10 +225,10 @@ function defaultPlanner(): Planner {
     orientation: 'landscape',
     customWidth: 420,
     customHeight: 297,
-    accentColor: '#45484c',
-    emptyCellColor: '#f2f3f0',
-    weekendColor: '#eceeec',
-    holidayColor: '#f4d8c9',
+    ...presetThemes[0].palette,
+    theme: presetThemes[0].id,
+    useCustomTitle: false,
+    title: '',
     dayNumberSize: 10,
     notes: {},
   }
@@ -188,8 +256,29 @@ function App() {
   const [loadingHolidays, setLoadingHolidays] = useState(false)
   const [editingDate, setEditingDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<Note>({ text: '', color: '#fffefa' })
+  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(readSavedThemes)
+  const [themeName, setThemeName] = useState('')
+  const [tab, setTab] = useState<Tab>('calendar')
+  const [availableWidth, setAvailableWidth] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
+  const sheetScroll = useRef<HTMLDivElement>(null)
   const holidayRequestId = useRef(0)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEMES_KEY, JSON.stringify(savedThemes))
+    } catch {
+      setHolidayStatus('Browser storage is unavailable. Saved themes will not persist.')
+    }
+  }, [savedThemes])
+
+  useEffect(() => {
+    const element = sheetScroll.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setAvailableWidth(entry.contentRect.width))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     try {
@@ -284,13 +373,46 @@ function App() {
   useEffect(() => {
     const style = document.createElement('style')
     style.dataset.pageFormat = 'true'
-    style.textContent = `@page { size: ${pageWidth}mm ${pageHeight}mm; margin: 5mm; } @media print { .workspace { height: ${pageHeight - 10}mm; } .month-row { height: ${monthRowHeight}mm; } }`
+    style.textContent = `@page { size: ${pageWidth}mm ${pageHeight}mm; margin: 5mm; } .month-row { height: ${monthRowHeight}mm; } @media print { .sheet-frame, .sheet { width: ${pageWidth - 10}mm !important; height: ${pageHeight - 10}mm !important; } }`
     document.head.append(style)
     return () => style.remove()
   }, [pageHeight, pageWidth, monthRowHeight])
 
+  const mmToPx = 96 / 25.4
+  // The sheet is laid out at true paper size and scaled to fit, so it matches the printout.
+  const scale = availableWidth ? Math.max(0.5, Math.min(2, availableWidth / (pageWidth * mmToPx))) : 1
+
   function update<K extends keyof Planner>(key: K, value: Planner[K]) {
     setPlanner((current) => ({ ...current, [key]: value }))
+  }
+
+  const themeValue = presetThemes.some((theme) => theme.id === planner.theme) || savedThemes.some((theme) => `saved:${theme.name}` === planner.theme)
+    ? planner.theme : 'custom'
+  const activeSavedTheme = themeValue.startsWith('saved:') ? themeValue.slice(6) : null
+
+  function applyTheme(value: string) {
+    const palette = presetThemes.find((theme) => theme.id === value)?.palette
+      ?? savedThemes.find((theme) => `saved:${theme.name}` === value)?.palette
+    setPlanner((current) => ({ ...current, ...palette, theme: palette ? value : 'custom' }))
+  }
+
+  function setColor(key: keyof Palette, value: string) {
+    setPlanner((current) => ({ ...current, [key]: value, theme: 'custom' }))
+  }
+
+  function saveTheme() {
+    const name = themeName.trim().slice(0, maxThemeNameLength)
+    if (!name) return
+    const palette = pickPalette(planner)
+    setSavedThemes((current) => [...current.filter((theme) => theme.name !== name), { name, palette }].sort((first, second) => first.name.localeCompare(second.name)))
+    update('theme', `saved:${name}`)
+    setThemeName('')
+  }
+
+  function deleteTheme() {
+    if (!activeSavedTheme) return
+    setSavedThemes((current) => current.filter((theme) => theme.name !== activeSavedTheme))
+    update('theme', 'custom')
   }
 
   function invalidateHolidayRequest() {
@@ -428,10 +550,15 @@ function App() {
   }
 
   const monthNames = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat('en', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, index, 1))))
+  const defaultTitle = `${monthNames[planner.startMonth]} ${planner.startYear} — ${monthNames[(planner.startMonth + planner.duration - 1) % 12]} ${months.at(-1)?.year}`
+  const title = planner.useCustomTitle && planner.title.trim() ? planner.title.trim() : defaultTitle
 
   return (
     <main className="app-shell" style={{
       '--accent': planner.accentColor,
+      '--accent-ink': inkFor(planner.accentColor),
+      '--header-bg': planner.headerColor,
+      '--header-ink': inkFor(planner.headerColor),
       '--empty-cell-color': planner.emptyCellColor,
       '--weekend-color': planner.weekendColor,
       '--holiday-color': planner.holidayColor,
@@ -450,9 +577,23 @@ function App() {
 
       <div className="workspace" id="planner">
         <aside className="controls" aria-label="Planner settings">
-          <div className="eyebrow">YOUR PLANNER</div>
-          <h1>Make room<br />for the year.</h1>
-          <p className="intro">Set a date range, mark the moments, then print it your way.</p>
+          <div className="tabs" role="tablist" aria-label="Settings sections">
+            {([['calendar', 'Calendar'], ['holidays', 'Holidays'], ['page', 'Page'], ['style', 'Style']] as const).map(([id, label]) => (
+              <button key={id} className="tab" type="button" role="tab" id={`tab-${id}`} aria-selected={tab === id} aria-controls="settings-panel" onClick={() => setTab(id)}>{label}</button>
+            ))}
+          </div>
+          <div className="controls-panel" id="settings-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          {tab === 'calendar' && <>
+          <fieldset className="control-group title-controls">
+            <legend>TITLE</legend>
+            <label className="checkbox-setting">
+              <input type="checkbox" checked={planner.useCustomTitle} onChange={(event) => update('useCustomTitle', event.target.checked)} />
+              Use a custom title
+            </label>
+            {planner.useCustomTitle && <label>Title
+              <input type="text" maxLength={maxTitleLength} value={planner.title} placeholder={defaultTitle} onChange={(event) => update('title', event.target.value)} />
+            </label>}
+          </fieldset>
 
           <fieldset className="control-group date-controls">
             <legend>DATE RANGE</legend>
@@ -476,8 +617,9 @@ function App() {
               </select>
             </label>
           </fieldset>
+          </>}
 
-          <fieldset className="control-group">
+          {tab === 'holidays' && <fieldset className="control-group">
             <legend>PUBLIC HOLIDAYS</legend>
             <label>Country
               <select value={planner.countryCode} onChange={(event) => {
@@ -507,9 +649,9 @@ function App() {
               {loadingHolidays ? 'Loading holidays...' : 'Load public holidays'}
             </button>
             <p className="field-hint">Holiday data provided by Nager.Date. Internet connection required.</p>
-          </fieldset>
+          </fieldset>}
 
-          <fieldset className="control-group print-settings">
+          {tab === 'page' && <fieldset className="control-group print-settings">
             <legend>PRINT FORMAT</legend>
             <div className="field-pair">
               <label>Paper
@@ -527,42 +669,55 @@ function App() {
               <label>Width (mm)<input type="number" min="80" max="1200" value={planner.customWidth} onChange={(event) => update('customWidth', clampNumber(event.target.value, 80, 1200))} /></label>
               <label>Height (mm)<input type="number" min="80" max="1200" value={planner.customHeight} onChange={(event) => update('customHeight', clampNumber(event.target.value, 80, 1200))} /></label>
             </div>}
-          </fieldset>
-          <fieldset className="control-group accent-settings">
-            <legend>COLOURS &amp; TYPE</legend>
-            <label>Planner accent
-              <input type="color" value={planner.accentColor} onChange={(event) => update('accentColor', event.target.value)} />
+          </fieldset>}
+          {tab === 'style' && <fieldset className="control-group accent-settings">
+            <legend>THEME</legend>
+            <label>Colour scheme
+              <select value={themeValue} onChange={(event) => applyTheme(event.target.value)}>
+                <optgroup label="Built in">{presetThemes.map((theme) => <option value={theme.id} key={theme.id}>{theme.name}</option>)}</optgroup>
+                {savedThemes.length > 0 && <optgroup label="Saved">{savedThemes.map((theme) => <option value={`saved:${theme.name}`} key={theme.name}>{theme.name}</option>)}</optgroup>}
+                <option value="custom">Custom</option>
+              </select>
             </label>
-            <label>Empty day cells
-              <input type="color" value={planner.emptyCellColor} onChange={(event) => update('emptyCellColor', event.target.value)} />
-            </label>
-            <label>Weekend cells
-              <input type="color" value={planner.weekendColor} onChange={(event) => update('weekendColor', event.target.value)} />
-            </label>
-            <label>Public holidays
-              <input type="color" value={planner.holidayColor} onChange={(event) => update('holidayColor', event.target.value)} />
-            </label>
+            <div className="palette-grid">
+              {paletteKeys.map((key) => <label key={key}>{paletteLabels[key]}
+                <input type="color" value={planner[key]} onChange={(event) => setColor(key, event.target.value)} />
+              </label>)}
+            </div>
+            {activeSavedTheme && <button className="outline-button" type="button" onClick={deleteTheme}>Delete “{activeSavedTheme}”</button>}
+            {themeValue === 'custom' && <div className="save-theme">
+              <input type="text" aria-label="Theme name" maxLength={maxThemeNameLength} placeholder="Name this theme" value={themeName} onChange={(event) => setThemeName(event.target.value)} />
+              <button className="outline-button" type="button" onClick={saveTheme} disabled={!themeName.trim()}>Save</button>
+            </div>}
+            <hr className="group-divider" />
             <label>Day number size <span className="inline-value">{planner.dayNumberSize}px</span>
               <input className="duration-range" type="range" min="7" max="18" step="1" value={planner.dayNumberSize} onChange={(event) => update('dayNumberSize', clampNumber(event.target.value, 7, 18))} />
               <span className="range-ends"><span>7px</span><span>18px</span></span>
             </label>
-          </fieldset>
+          </fieldset>}
+          </div>
           {holidayStatus && <p className="status-message" role="status">{holidayStatus}</p>}
           <footer className="save-state"><span className="save-dot" /> Saved in this browser</footer>
         </aside>
 
         <section className="preview" aria-label="Planner preview">
           <div className="preview-heading">
-            <div><h2>{monthNames[planner.startMonth]} {planner.startYear}<span className="through"> — </span>{monthNames[(planner.startMonth + planner.duration - 1) % 12]} {months.at(-1)?.year}</h2></div>
-            <div className="legend"><span><i className="legend-holiday" /> Holiday</span><span><i className="legend-note" /> Your notes</span></div>
+            <span className="paper-label">{planner.paper === 'Custom' ? `${pageWidth} × ${pageHeight} mm` : `${planner.paper} · ${planner.orientation}`}</span>
           </div>
-          <div className="planner-table-wrap">
-            <table className="planner-table">
-              <thead><tr><th className="month-column-head" scope="col">MONTH</th>{Array.from({ length: calendarSpan.columnCount }, (_, index) => <th key={index} scope="col">{weekdayAbbreviations[(planner.weekStartsOn + calendarSpan.firstColumn + index) % 7]}</th>)}</tr></thead>
-              <tbody>{months.map(({ year, month }, index) => renderMonth(year, month, index))}</tbody>
-            </table>
+          <div className="sheet-scroll" ref={sheetScroll}>
+            <div className="sheet-frame" style={{ width: pageWidth * mmToPx * scale, height: pageHeight * mmToPx * scale }}>
+              <div className="sheet" style={{ width: `${pageWidth}mm`, height: `${pageHeight}mm`, zoom: scale }}>
+                <h1 className="sheet-title">{title}</h1>
+                <div className="planner-table-wrap">
+                  <table className="planner-table">
+                    <thead><tr><th className="month-column-head" scope="col"></th>{Array.from({ length: calendarSpan.columnCount }, (_, index) => <th key={index} scope="col">{weekdayAbbreviations[(planner.weekStartsOn + calendarSpan.firstColumn + index) % 7]}</th>)}</tr></thead>
+                    <tbody>{months.map(({ year, month }, index) => renderMonth(year, month, index))}</tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="preview-foot"><span>Click a date to add a note or highlight</span><span>{planner.paper} · {planner.orientation}</span></div>
+          <div className="preview-foot"><span>Click a date to add a note or highlight</span></div>
         </section>
       </div>
 
