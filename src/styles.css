@@ -65,6 +65,7 @@ input[type='number'] { appearance: textfield; }
 .custom-size { margin-top: -1px; }
 input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px; cursor: pointer; }
 .status-message { color: #42624e; font-size: 11px; line-height: 1.5; }
+.font-size-heading { margin: 0; color: #738075; font: 500 10px 'DM Mono', monospace; }
 .save-state { display: flex; align-items: center; gap: 7px; color: #7e887f; font-size: 10px; }
 .save-dot { width: 6px; height: 6px; border-radius: 50%; background: #66896b; }
 .control-group > .checkbox-setting { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
@@ -79,23 +80,23 @@ input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px;
 .sheet-scroll { width: 100%; overflow-x: auto; }
 .sheet-frame { margin: 0 auto; }
 .sheet { display: flex; flex-direction: column; padding: 5mm; overflow: hidden; background: var(--paper); box-shadow: 0 2px 14px #17231d33; }
-.sheet-title { flex: 0 0 auto; margin: 0 0 3mm; color: var(--accent); font: 500 15pt/1.15 var(--serif); }
+.sheet-title { flex: 0 0 auto; margin: 0 0 3mm; color: var(--accent); font: 500 var(--title-font-size)/1.15 var(--serif); }
 .planner-table-wrap { flex: 1 1 auto; min-height: 0; border: 1px solid #c9cdca; }
 .planner-table { width: 100%; height: 100%; table-layout: fixed; border-collapse: collapse; color: #4c5256; font-family: 'DM Mono', monospace; }
-.planner-table thead tr { height: 5mm; }
-.planner-table thead th { border: 1px solid #c9cdca; color: var(--header-ink); background: var(--header-bg); font-size: 5.5pt; font-weight: 500; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.planner-table thead th:first-child, .month-label { width: 14mm; }
+.planner-table thead tr { height: var(--weekday-row-height); }
+.planner-table thead th { border: 1px solid #c9cdca; color: var(--header-ink); background: var(--header-bg); font-size: var(--weekday-font-size); font-weight: 500; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.planner-table thead th:first-child, .month-label { width: var(--month-label-width); }
 .month-row { break-inside: avoid; page-break-inside: avoid; }
 .month-label { padding: 1mm; border: 1px solid var(--accent); color: var(--accent-ink); background: var(--accent); text-align: center; vertical-align: middle; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .month-name { width: 100%; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; vertical-align: middle; }
-.month-name strong { font: 600 7pt/1.1 var(--serif); }
-.month-name small { font-size: 5.5pt; opacity: .8; }
+.month-name strong { font: 600 var(--month-name-font-size)/1.1 var(--serif); }
+.month-name small { font-size: var(--month-year-font-size); opacity: .8; }
 .date-cell, .empty-date { height: auto; padding: 0; border: 1px solid #c9cdca; }
 .date-cell { position: relative; vertical-align: top; }
 .empty-date { background: var(--empty-cell-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .date-mark { position: absolute; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; overflow: hidden; padding: .5mm; border: 0; color: #3f4448; background: #fffefa; cursor: pointer; font: 6.5pt 'DM Mono', monospace; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.date-mark > .day-number { position: absolute; top: .5mm; right: .5mm; font-size: var(--day-number-size); line-height: 1; }
-.day-note-text { display: block; max-width: 100%; overflow: hidden; margin-top: 3mm; color: #35413a; font: 5pt/1.15 'DM Sans', sans-serif; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.date-mark > .day-number { position: absolute; top: .5mm; right: var(--day-number-right); font-size: var(--day-number-font-size); line-height: 1; }
+.day-note-text { display: block; max-width: 100%; overflow: hidden; margin-top: 3mm; color: #35413a; font: var(--day-note-font-size)/1.15 'DM Sans', sans-serif; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .date-mark:hover { outline: 1px solid #8c969d; outline-offset: -1px; background: #f0f1ef; }
 .date-cell.is-weekend { background: var(--weekend-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .date-cell.is-weekend .date-mark:not(.marked) { background: transparent; }

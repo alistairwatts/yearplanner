@@ -31,7 +31,12 @@ type Planner = Palette & {
   orientation: 'landscape' | 'portrait'
   customWidth: number
   customHeight: number
-  dayNumberSize: number
+  fontSizesOverridden: boolean
+  titleFontSize: number
+  dayNameFontSize: number
+  monthNameFontSize: number
+  yearNumberFontSize: number
+  dayNumberFontSize: number
   useCustomTitle: boolean
   title: string
   theme: string
@@ -63,9 +68,59 @@ const numericLimits = {
   weekStartsOn: [0, 6],
   customWidth: [80, 1200],
   customHeight: [80, 1200],
-  dayNumberSize: [7, 18],
 } as const
+const fontSizeLimits = {
+  titleFontSize: [2, 12],
+  dayNameFontSize: [0.8, 5],
+  monthNameFontSize: [1.5, 7],
+  yearNumberFontSize: [1, 5],
+  dayNumberFontSize: [1, 5],
+} as const
+const fontSizeSettings = [
+  { key: 'titleFontSize', label: 'Title' },
+  { key: 'dayNameFontSize', label: 'Day names' },
+  { key: 'monthNameFontSize', label: 'Month names' },
+  { key: 'yearNumberFontSize', label: 'Year number' },
+  { key: 'dayNumberFontSize', label: 'Day number' },
+] as const
+type FontSizeKey = keyof typeof fontSizeLimits
+type FontSizeValues = Record<FontSizeKey, number>
+const fontSizeDefaults: FontSizeValues = {
+  titleFontSize: 5.3,
+  dayNameFontSize: 1.9,
+  monthNameFontSize: 4.9,
+  yearNumberFontSize: 3.5,
+  dayNumberFontSize: 2.6,
+}
 const paperSizes = ['A3', 'A4', 'A5', 'Letter', 'Legal', 'Ledger', 'Custom'] as const
+const paperDimensions: Record<string, [number, number]> = {
+  A3: [297, 420], A4: [210, 297], A5: [148, 210],
+  Letter: [216, 279], Legal: [216, 356], Ledger: [279, 432],
+}
+
+function paperScaleFor(paper: string, width: number, height: number) {
+  const [shortEdge, longEdge] = paper === 'Custom' ? [height, width] : paperDimensions[paper]
+  return Math.sqrt(shortEdge * longEdge / (210 * 297))
+}
+
+function fontSizeMaximum(key: FontSizeKey, paperScale: number) {
+  const [minimum, maximum] = fontSizeLimits[key]
+  return Math.max(minimum, Math.round(maximum * paperScale * 10) / 10)
+}
+
+function recommendedFontSizes(paperScale: number): FontSizeValues {
+  return Object.fromEntries(fontSizeSettings.map(({ key }) => {
+    const [minimum] = fontSizeLimits[key]
+    return [key, Math.max(minimum, Math.round(fontSizeDefaults[key] * paperScale * 10) / 10)]
+  })) as FontSizeValues
+}
+
+function clampFontSizes(sizes: FontSizeValues, paperScale: number): FontSizeValues {
+  return Object.fromEntries(fontSizeSettings.map(({ key }) => {
+    const [minimum] = fontSizeLimits[key]
+    return [key, Math.max(minimum, Math.min(fontSizeMaximum(key, paperScale), sizes[key]))]
+  })) as FontSizeValues
+}
 
 function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
@@ -114,7 +169,7 @@ function normalizeNoteColor(value: unknown) {
 
 function normalizePlannerData(data: unknown): Planner {
   if (!isRecord(data)) throw new Error('This file does not look like a planner backup.')
-  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', 'useCustomTitle', 'title', 'theme', 'notes']
+  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'fontSizesOverridden', 'accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', ...Object.keys(fontSizeLimits), 'useCustomTitle', 'title', 'theme', 'notes']
   if (!knownKeys.some((key) => key in data)) throw new Error('This file does not look like a planner backup.')
 
   const planner = defaultPlanner()
@@ -127,7 +182,6 @@ function normalizePlannerData(data: unknown): Planner {
     }
     planner[key] = value
   }
-
   if (data.countryCode !== undefined) {
     if (typeof data.countryCode !== 'string' || !/^[A-Za-z]{2}$/.test(data.countryCode)) throw new Error('Invalid planner country code.')
     planner.countryCode = data.countryCode.toUpperCase()
@@ -153,6 +207,32 @@ function normalizePlannerData(data: unknown): Planner {
   if (data.orientation !== undefined) {
     if (data.orientation !== 'landscape' && data.orientation !== 'portrait') throw new Error('Invalid paper orientation.')
     planner.orientation = data.orientation
+  }
+  if (data.fontSizesOverridden !== undefined && typeof data.fontSizesOverridden !== 'boolean') {
+    throw new Error('Invalid font-size override setting.')
+  }
+  const hasSavedFontSizes = Object.keys(fontSizeLimits).some((key) => data[key] !== undefined) || data.dayNumberSize !== undefined
+  planner.fontSizesOverridden = data.fontSizesOverridden ?? (planner.paper === 'Custom' || hasSavedFontSizes)
+  if (planner.paper === 'Custom') planner.fontSizesOverridden = true
+  if (data.dayNumberSize !== undefined && (typeof data.dayNumberSize !== 'number' || !Number.isInteger(data.dayNumberSize) || data.dayNumberSize < 7 || data.dayNumberSize > 18)) {
+    throw new Error('Invalid planner setting: dayNumberSize.')
+  }
+  const paperScale = paperScaleFor(planner.paper, planner.customWidth, planner.customHeight)
+  const recommendedSizes = recommendedFontSizes(paperScale)
+  for (const { key } of fontSizeSettings) {
+    let value = data[key]
+    if (value === undefined && key === 'dayNumberFontSize' && data.dayNumberSize !== undefined) {
+      value = Math.round(data.dayNumberSize * 25.4 / 96 * paperScale * 10) / 10
+    }
+    if (value !== undefined) {
+      const [minimum] = fontSizeLimits[key]
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum
+        || Math.abs(value * 10 - Math.round(value * 10)) > 0.000001) {
+        throw new Error(`Invalid planner font size: ${key}.`)
+      }
+      value = Math.min(fontSizeMaximum(key, paperScale), Math.round(value * 10) / 10)
+    }
+    planner[key] = planner.fontSizesOverridden && typeof value === 'number' ? value : recommendedSizes[key]
   }
   let hasColors = false
   for (const key of paletteKeys) {
@@ -195,6 +275,11 @@ function clampNumber(value: string, minimum: number, maximum: number) {
   return Number.isFinite(parsed) ? Math.trunc(Math.max(minimum, Math.min(maximum, parsed))) : minimum
 }
 
+function clampDecimal(value: string, minimum: number, maximum: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : minimum
+}
+
 function detectBrowserCountry() {
   if (typeof navigator === 'undefined') return 'GB'
   const languages = navigator.languages.length ? navigator.languages : [navigator.language]
@@ -225,11 +310,12 @@ function defaultPlanner(): Planner {
     orientation: 'landscape',
     customWidth: 420,
     customHeight: 297,
+    fontSizesOverridden: false,
     ...presetThemes[0].palette,
     theme: presetThemes[0].id,
     useCustomTitle: false,
     title: '',
-    dayNumberSize: 10,
+    ...clampFontSizes(recommendedFontSizes(paperScaleFor('A4', 297, 210)), 1),
     notes: {},
   }
 }
@@ -359,16 +445,26 @@ function App() {
     return displayed.filter((holiday) => !planner.removedHolidayDates.includes(holiday.date))
   }, [allHolidays, planner.moveWeekendHolidays, planner.regionCode, planner.removedHolidayDates])
 
-  const paperDimensions: Record<string, [number, number]> = {
-    A3: [297, 420], A4: [210, 297], A5: [148, 210],
-    Letter: [216, 279], Legal: [216, 356], Ledger: [279, 432],
-  }
   const [shortEdge, longEdge] = planner.paper === 'Custom'
     ? [Math.max(80, Math.min(planner.customHeight, 1200)), Math.max(80, Math.min(planner.customWidth, 1200))]
     : paperDimensions[planner.paper]
   const pageWidth = planner.orientation === 'landscape' ? longEdge : shortEdge
   const pageHeight = planner.orientation === 'landscape' ? shortEdge : longEdge
-  const monthRowHeight = Math.max(2, (pageHeight - 36) / planner.duration)
+  const paperScale = paperScaleFor(planner.paper, planner.customWidth, planner.customHeight)
+  const fontSizes = planner.fontSizesOverridden ? planner : recommendedFontSizes(paperScale)
+  const monthRowHeight = Math.max(2, (pageHeight - 36 * paperScale) / planner.duration)
+  const monthLabelWidth = 14 * paperScale
+  const dateCellWidth = (pageWidth - 10 - monthLabelWidth) / calendarSpan.columnCount
+  const referenceDateCellWidth = (297 - 10 - 14) / 42
+  const referenceRowHeight = (210 - 36) / 14
+  const dateFontScale = Math.min(dateCellWidth / referenceDateCellWidth, monthRowHeight / referenceRowHeight) / paperScale
+  const monthFontScale = Math.min(monthRowHeight / referenceRowHeight / paperScale, 1)
+  const weekdayFontScale = Math.min(dateCellWidth / referenceDateCellWidth / paperScale, 1)
+  const dayNumberFontSize = Math.min(Math.max(0.8, fontSizes.dayNumberFontSize * dateFontScale), dateCellWidth * 0.65)
+  const dayNameFontSize = Math.min(Math.max(0.4, fontSizes.dayNameFontSize * weekdayFontScale), dateCellWidth * 0.3)
+  const monthNameFontSize = Math.max(0.8, fontSizes.monthNameFontSize * monthFontScale)
+  const yearNumberFontSize = Math.max(0.8, fontSizes.yearNumberFontSize * monthFontScale)
+  const dayNumberRight = Math.min(0.5, dateCellWidth * 0.05)
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -384,6 +480,45 @@ function App() {
 
   function update<K extends keyof Planner>(key: K, value: Planner[K]) {
     setPlanner((current) => ({ ...current, [key]: value }))
+  }
+
+  function changePaper(paper: string) {
+    setPlanner((current) => {
+      const nextPaperScale = paperScaleFor(paper, current.customWidth, current.customHeight)
+      const fontSizes = current.fontSizesOverridden
+        ? clampFontSizes(current, nextPaperScale)
+        : recommendedFontSizes(nextPaperScale)
+      return {
+        ...current,
+        ...fontSizes,
+        paper,
+        fontSizesOverridden: paper === 'Custom' || current.fontSizesOverridden,
+      }
+    })
+  }
+
+  function setFontSizeOverride(enabled: boolean) {
+    setPlanner((current) => {
+      const nextPaperScale = paperScaleFor(current.paper, current.customWidth, current.customHeight)
+      return {
+        ...current,
+        ...(!enabled ? recommendedFontSizes(nextPaperScale) : {}),
+        fontSizesOverridden: current.paper === 'Custom' || enabled,
+      }
+    })
+  }
+
+  function updateCustomPaperDimension(key: 'customWidth' | 'customHeight', value: number) {
+    setPlanner((current) => {
+      const nextWidth = key === 'customWidth' ? value : current.customWidth
+      const nextHeight = key === 'customHeight' ? value : current.customHeight
+      const nextPaperScale = paperScaleFor('Custom', nextWidth, nextHeight)
+      return {
+        ...current,
+        [key]: value,
+        ...clampFontSizes(current, nextPaperScale),
+      }
+    })
   }
 
   const themeValue = presetThemes.some((theme) => theme.id === planner.theme) || savedThemes.some((theme) => `saved:${theme.name}` === planner.theme)
@@ -562,7 +697,15 @@ function App() {
       '--empty-cell-color': planner.emptyCellColor,
       '--weekend-color': planner.weekendColor,
       '--holiday-color': planner.holidayColor,
-      '--day-number-size': `${planner.dayNumberSize}px`,
+      '--title-font-size': `${fontSizes.titleFontSize}mm`,
+      '--weekday-font-size': `${dayNameFontSize}mm`,
+      '--month-name-font-size': `${monthNameFontSize}mm`,
+      '--month-year-font-size': `${yearNumberFontSize}mm`,
+      '--day-number-font-size': `${dayNumberFontSize}mm`,
+      '--day-number-right': `${dayNumberRight}mm`,
+      '--month-label-width': `${monthLabelWidth}mm`,
+      '--weekday-row-height': `${5 * paperScale}mm`,
+      '--day-note-font-size': `${Math.max(4, (5 * 96 / 72) * dateFontScale)}px`,
     } as CSSProperties}>
       <header className="topbar">
         <a className="brand" href="#planner" aria-label="Year Planner home"><span className="brand-mark">Y</span><span>year / planner</span></a>
@@ -655,7 +798,7 @@ function App() {
             <legend>PRINT FORMAT</legend>
             <div className="field-pair">
               <label>Paper
-                <select value={planner.paper} onChange={(event) => update('paper', event.target.value)}>
+                <select value={planner.paper} onChange={(event) => changePaper(event.target.value)}>
                   <option>A3</option><option>A4</option><option>A5</option><option>Letter</option><option>Legal</option><option>Ledger</option><option>Custom</option>
                 </select>
               </label>
@@ -666,9 +809,23 @@ function App() {
               </label>
             </div>
             {planner.paper === 'Custom' && <div className="field-pair custom-size">
-              <label>Width (mm)<input type="number" min="80" max="1200" value={planner.customWidth} onChange={(event) => update('customWidth', clampNumber(event.target.value, 80, 1200))} /></label>
-              <label>Height (mm)<input type="number" min="80" max="1200" value={planner.customHeight} onChange={(event) => update('customHeight', clampNumber(event.target.value, 80, 1200))} /></label>
+              <label>Width (mm)<input type="number" min="80" max="1200" value={planner.customWidth} onChange={(event) => updateCustomPaperDimension('customWidth', clampNumber(event.target.value, 80, 1200))} /></label>
+              <label>Height (mm)<input type="number" min="80" max="1200" value={planner.customHeight} onChange={(event) => updateCustomPaperDimension('customHeight', clampNumber(event.target.value, 80, 1200))} /></label>
             </div>}
+            <hr className="group-divider" />
+            <p className="font-size-heading">TYPOGRAPHY · MM</p>
+            <label className="checkbox-setting">
+              <input type="checkbox" checked={planner.paper === 'Custom' || planner.fontSizesOverridden} disabled={planner.paper === 'Custom'} onChange={(event) => setFontSizeOverride(event.target.checked)} />
+              Override font sizes
+            </label>
+            {fontSizeSettings.map(({ key, label }) => {
+              const [minimum] = fontSizeLimits[key]
+              const maximum = fontSizeMaximum(key, paperScale)
+              return <label key={key}>{label} <span className="inline-value">{fontSizes[key].toFixed(1)} mm</span>
+                <input className="duration-range" type="range" min={minimum} max={maximum} step="0.1" value={fontSizes[key]} disabled={!planner.fontSizesOverridden && planner.paper !== 'Custom'} onChange={(event) => update(key, Math.round(clampDecimal(event.target.value, minimum, maximum) * 10) / 10)} />
+                <span className="range-ends"><span>{minimum} mm</span><span>{maximum} mm</span></span>
+              </label>
+            })}
           </fieldset>}
           {tab === 'style' && <fieldset className="control-group accent-settings">
             <legend>THEME</legend>
@@ -689,11 +846,6 @@ function App() {
               <input type="text" aria-label="Theme name" maxLength={maxThemeNameLength} placeholder="Name this theme" value={themeName} onChange={(event) => setThemeName(event.target.value)} />
               <button className="outline-button" type="button" onClick={saveTheme} disabled={!themeName.trim()}>Save</button>
             </div>}
-            <hr className="group-divider" />
-            <label>Day number size <span className="inline-value">{planner.dayNumberSize}px</span>
-              <input className="duration-range" type="range" min="7" max="18" step="1" value={planner.dayNumberSize} onChange={(event) => update('dayNumberSize', clampNumber(event.target.value, 7, 18))} />
-              <span className="range-ends"><span>7px</span><span>18px</span></span>
-            </label>
           </fieldset>}
           </div>
           {holidayStatus && <p className="status-message" role="status">{holidayStatus}</p>}

@@ -77,6 +77,11 @@ Acceptance criteria:
 - The calendar grid uses the available height in its print area without leaving an unexplained gap beneath it.
 - Date content is aligned to the top of each cell, and every date cell retains enough height for its day number to remain visible in print.
 - Day numbers remain visible and sit at the top-right of their own cells in print. The last month, including its day numbers, must not be clipped at the page edge.
+- Calendar typography scales with the physical date-cell width and month-row height, preserving the A4 landscape sizing as its baseline; weekday labels follow column width, and month labels follow row height. Keep day numbers large enough to remain visible and clip or truncate note text within each cell on extreme custom paper proportions.
+- The Page tab provides millimetre-based font-size sliders for the title, weekday labels, month labels, month-cell year, and day numbers. Their values apply to the same screen and print sheet.
+- Standard paper sizes use recommended font sizes scaled from the A4 values by the square root of the paper-area ratio; landscape and portrait use the same recommendations.
+- An “Override font sizes” checkbox defaults off for standard papers. When off, show the paper-specific recommendations and disable the sliders. When enabled, enable the sliders and initialize their values to the current recommendations. Turning it off restores the recommendations.
+- Custom paper always forces the override checkbox on and keeps it checked and disabled. Custom font-size slider maxima scale by the square root of the custom paper-area ratio relative to A4, rounded to 0.1 mm; values are clamped when a dimension change lowers a maximum.
 - Preserve selected colors and readable day numbers and note text in print, subject to browser print-color settings.
 - Verify with print-media rendering and, when possible, a real browser print/PDF preview. Inspect the final row and the wrapper border, not only the screen view.
 
@@ -120,9 +125,12 @@ Acceptance criteria:
 ## 4. Configuration and Persistence
 
 - Persist planner configuration under local-storage key `year-planner:v1`.
-- Configuration includes start month/year, duration, week start, country/region, weekend movement, removed holiday dates, paper/orientation/custom dimensions, the five theme colours, theme name, custom title settings, day-number size, and date-keyed notes.
+- Configuration includes start month/year, duration, week start, country/region, weekend movement, removed holiday dates, paper/orientation/custom dimensions, font-size override state, the five theme colours, theme name, custom title settings, title/day-name/month-name/year-number/day-number font sizes in millimetres, and date-keyed notes.
+- Font-size defaults preserve the existing A4 landscape appearance: title 5.3 mm, day names 1.9 mm, month names 4.9 mm, year number 3.5 mm, and day number 2.6 mm. Slider ranges are respectively 2–12 mm, 0.8–5 mm, 1.5–7 mm, 1–5 mm, and 1–5 mm.
+- Base slider maxima are 12 mm for title, 5 mm for day names, 7 mm for month names, and 5 mm each for year and day numbers; each maximum is multiplied by the square root of paper area divided by A4 area. Minimums remain 2 mm, 0.8 mm, 1.5 mm, 1 mm, and 1 mm respectively.
+- Saved or imported planners with only the legacy pixel-based day-number size convert that value to millimetres; missing new font-size settings use the paper-scaled recommendations.
 - Saved custom themes persist separately under `year-planner:themes:v1`.
-- Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, the Monochrome theme, default title, and 10px day numbers.
+- Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, the Monochrome theme, default title, recommended A4 font sizes, and font-size overrides off.
 - Backups lacking theme fields import as the Monochrome defaults; backups with colours but no theme name import as "Custom" with the legacy heading colour `#f0f1ef`.
 - Treat local storage as optional: malformed or unavailable storage must not prevent the app from starting. Show a useful status when changes cannot be saved.
 - Migrate older saved or imported named highlight colors (`leaf`, `coral`, `sky`, `gold`) to their corresponding hex colors. Preserve valid six-digit hex; normalize invalid colors to `#fffefa`.
@@ -130,7 +138,7 @@ Acceptance criteria:
 
 ## 5. Visual and Interaction Requirements
 
-- The configuration sidebar is split into four tabs (Calendar: title and date range; Holidays; Page: paper and layout; Style: theme, colours, day-number size). It fills the viewport height beside the calendar, scrolls internally, and keeps the status message and save indicator pinned at its bottom. On narrow screens it stacks above the calendar.
+- The configuration sidebar is split into four tabs (Calendar: title and date range; Holidays; Page: paper, layout, and typography sizes in millimetres; Style: theme and colours). It fills the viewport height beside the calendar, scrolls internally, and keeps the status message and save indicator pinned at its bottom. On narrow screens it stacks above the calendar.
 - The on-screen planner is a sheet with the exact aspect ratio of the selected paper and orientation. It is laid out at true paper size (including the 5 mm margin) and scaled to fit the available width (scale limited to 0.5–2; below that the preview scrolls horizontally). It uses the same styles as print, so it shows what will be printed. Date cells remain clickable.
 - Keep the calendar preview central.
 - Use explicit, stable table geometry; date buttons fill cells and do not cause row or column shifts.
@@ -158,10 +166,11 @@ Before calling a rebuild complete:
 4. Exercise note create/edit/delete, legacy color migration, reload persistence, JSON export/import, and malformed import.
 5. Exercise holiday loading success/failure, regional filtering, a January range requiring the preceding year, and country-switch reset behavior.
 6. Verify weekend substitute collisions: a weekend holiday skips weekends, actual holidays, and prior substitute allocations; same-source-date holidays share a substitute.
-7. Under print media, verify that day numbers remain visible at the top-right of each cell, date content is top-aligned, every date cell has enough room to show its number, the last month is not clipped, and the grid fills its available area without a visible gap.
-8. If actual user print output differs from automated print emulation, reproduce using the target browser and paper/orientation settings before changing layout rules.
-9. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Save, reload, select, and delete a named theme.
-10. Verify the sheet's aspect ratio matches the paper for each size and orientation and that print output matches the on-screen sheet.
+7. Verify standard paper recommendations, override enable/disable behavior, and custom paper's forced override state and paper-scaled slider maxima.
+8. Under print media, verify that day numbers remain visible at the top-right of each cell, date content is top-aligned, every date cell has enough room to show its number, the last month is not clipped, and the grid fills its available area without a visible gap.
+9. If actual user print output differs from automated print emulation, reproduce using the target browser and paper/orientation settings before changing layout rules.
+10. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Save, reload, select, and delete a named theme.
+11. Verify the sheet's aspect ratio matches the paper for each size and orientation and that print output matches the on-screen sheet.
 
 ## 8. Out of Scope
 
