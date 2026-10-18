@@ -41,6 +41,7 @@ type Planner = Palette & {
   monthNameFontSize: number
   yearNumberFontSize: number
   dayNumberFontSize: number
+  dayNoteFontSize: number
   useCustomTitle: boolean
   title: string
   theme: string
@@ -79,6 +80,7 @@ const fontSizeLimits = {
   monthNameFontSize: [1.5, 7],
   yearNumberFontSize: [1, 5],
   dayNumberFontSize: [1, 5],
+  dayNoteFontSize: [0.5, 4],
 } as const
 const fontSizeSettings = [
   { key: 'titleFontSize', label: 'Title' },
@@ -86,6 +88,7 @@ const fontSizeSettings = [
   { key: 'monthNameFontSize', label: 'Month names' },
   { key: 'yearNumberFontSize', label: 'Year number' },
   { key: 'dayNumberFontSize', label: 'Day number' },
+  { key: 'dayNoteFontSize', label: 'Day note size' },
 ] as const
 type FontSizeKey = keyof typeof fontSizeLimits
 type FontSizeValues = Record<FontSizeKey, number>
@@ -95,6 +98,7 @@ const fontSizeDefaults: FontSizeValues = {
   monthNameFontSize: 4.9,
   yearNumberFontSize: 3.5,
   dayNumberFontSize: 2.6,
+  dayNoteFontSize: 1.8,
 }
 const paperSizes = ['A3', 'A4', 'A5', 'Letter', 'Legal', 'Ledger', 'Custom'] as const
 const paperDimensions: Record<string, [number, number]> = {
@@ -392,8 +396,10 @@ function App() {
   const [themeName, setThemeName] = useState('')
   const [tab, setTab] = useState<Tab>('calendar')
   const [availableWidth, setAvailableWidth] = useState(0)
+  const [editingCellSize, setEditingCellSize] = useState<[number, number] | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const sheetScroll = useRef<HTMLDivElement>(null)
+  const editingCellRef = useRef<HTMLTableCellElement>(null)
   const holidayDataCache = useRef(new Map<string, Promise<Holiday[]>>())
 
   useEffect(() => {
@@ -411,6 +417,20 @@ function App() {
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    const element = editingCellRef.current
+    if (!element) return
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect()
+      setEditingCellSize((current) => current && Math.abs(current[0] - width) < 0.1 && Math.abs(current[1] - height) < 0.1
+        ? current : [width, height])
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [editingDate, planner, availableWidth])
 
   useEffect(() => {
     try {
@@ -660,7 +680,9 @@ function App() {
     update('theme', 'custom')
   }
 
-  function editDate(key: string) {
+  function editDate(key: string, cell: HTMLTableCellElement) {
+    const { width, height } = cell.getBoundingClientRect()
+    setEditingCellSize([width, height])
     setEditingDate(key)
     setDraft(planner.notes[key] ?? { text: '', color: '#fffefa' })
   }
@@ -782,17 +804,18 @@ function App() {
           const dayHolidayColor = dayHolidays.some((entry) => entry.sourceKey === primarySourceKey) ? planner.holidayColor : planner.secondaryHolidayColor
           const weekday = new Date(Date.UTC(year, month, day)).getUTCDay()
           return (
-              <td className={`date-cell ${weekday === 0 || weekday === 6 ? 'is-weekend' : ''} ${holiday ? 'has-holiday' : ''}`} style={holiday ? { '--day-holiday-color': dayHolidayColor } as CSSProperties : undefined} key={column}>
+              <td ref={key === editingDate ? editingCellRef : undefined} className={`date-cell ${weekday === 0 || weekday === 6 ? 'is-weekend' : ''} ${holiday ? 'has-holiday' : ''}`} style={holiday ? { '--day-holiday-color': dayHolidayColor } as CSSProperties : undefined} key={column}>
               <button
                 className={`date-mark ${holiday ? 'is-holiday' : ''} ${note ? 'marked' : ''}`}
                 style={{
                   ...(note ? { '--highlight-color': note.color } : {}),
                   ...(holiday ? { '--day-holiday-color': dayHolidayColor } : {}),
+                  '--day-mark-ink': inkFor(note?.color ?? (holiday ? dayHolidayColor : weekday === 0 || weekday === 6 ? planner.weekendColor : '#fffefa')),
                 } as CSSProperties}
                 type="button"
                 title={[note?.text, ...dayHolidays.map((entry) => entry.name)].filter(Boolean).join(' | ') || `Add a note for ${key}`}
                 aria-label={`${key}${note ? `, note: ${note.text}` : ''}${holiday ? `, ${dayHolidays.map((entry) => entry.name).join(', ')}` : ''}`}
-                onClick={() => editDate(key)}
+                onClick={(event) => editDate(key, event.currentTarget.parentElement as HTMLTableCellElement)}
               >
                 <span className="day-number">{day}</span>
                 {note?.text && <span className="day-note-text">{note.text}</span>}
@@ -807,6 +830,16 @@ function App() {
   const monthNames = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat('en', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, index, 1))))
   const defaultTitle = `${monthNames[planner.startMonth]} ${planner.startYear} — ${monthNames[(planner.startMonth + planner.duration - 1) % 12]} ${months.at(-1)?.year}`
   const title = planner.useCustomTitle && planner.title.trim() ? planner.title.trim() : defaultTitle
+  const editingHoliday = editingDate ? holidays.find((holiday) => holiday.date === editingDate) : undefined
+  const editingWeekday = editingDate ? new Date(`${editingDate}T00:00:00Z`).getUTCDay() : -1
+  const editingPrimarySourceKey = planner.holidaySources[0] ? holidaySourceKey(planner.holidaySources[0]) : ''
+  const editingHolidayColor = editingHoliday?.sourceKey === editingPrimarySourceKey ? planner.holidayColor : planner.secondaryHolidayColor
+  const draftIsMarked = Boolean(draft.text.trim()) || draft.color.toLowerCase() !== '#fffefa'
+  const previewBackground = draftIsMarked ? draft.color
+    : editingHoliday ? editingHolidayColor
+      : editingWeekday === 0 || editingWeekday === 6 ? planner.weekendColor : '#fffefa'
+  const notePreviewScale = 6 * scale
+  const previewCellSize = editingCellSize ?? [dateCellWidth * mmToPx * scale, monthRowHeight * mmToPx * scale]
 
   return (
     <main className="app-shell" style={{
@@ -826,7 +859,7 @@ function App() {
       '--day-number-right': `${dayNumberRight}mm`,
       '--month-label-width': `${monthLabelWidth}mm`,
       '--weekday-row-height': `${5 * paperScale}mm`,
-      '--day-note-font-size': `${Math.max(4, (5 * 96 / 72) * dateFontScale)}px`,
+      '--day-note-font-size': `${fontSizes.dayNoteFontSize * dateFontScale}mm`,
     } as CSSProperties}>
       <header className="topbar">
         <a className="brand" href="#planner" aria-label="Year Planner home"><span className="brand-mark">Y</span><span>year / planner</span></a>
@@ -1014,19 +1047,49 @@ function App() {
           <button className="dialog-close" type="button" aria-label="Close" onClick={() => setEditingDate(null)}>×</button>
           <span className="eyebrow">DAY NOTE</span>
           <h2 id="note-title">{new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(`${editingDate}T00:00:00Z`))}</h2>
-          <label>Note <textarea autoFocus rows={3} maxLength={160} value={draft.text} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))} placeholder="Add a plan, reminder, or occasion" /></label>
-          {holidays.some((holiday) => holiday.date === editingDate) && <div className="holiday-actions">
-            <p>Public holidays</p>
-            {holidays.filter((holiday) => holiday.date === editingDate).map((entry) => {
-              const source = planner.holidaySources.find((candidate) => holidaySourceKey(candidate) === entry.sourceKey)
-              const countryName = countries.find((country) => country.countryCode === source?.countryCode)?.name ?? source?.countryCode
-              return <div className="holiday-action-entry" key={holidayRemovalId(entry.sourceKey, { date: entry.actualDate, name: entry.name })}>
-                <span>{entry.name} · {countryName}{source?.regionCode ? ` (${source.regionCode})` : ''}</span>
-                <button className="outline-button" type="button" onClick={() => removeHoliday(entry)}>Remove</button>
+          <div className="note-dialog-layout">
+            <div className="note-dialog-fields">
+              <label>Note <textarea autoFocus rows={3} maxLength={160} value={draft.text} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))} placeholder="Add a plan, reminder, or occasion" /></label>
+              {holidays.some((holiday) => holiday.date === editingDate) && <div className="holiday-actions">
+                <p>Public holidays</p>
+                {holidays.filter((holiday) => holiday.date === editingDate).map((entry) => {
+                  const source = planner.holidaySources.find((candidate) => holidaySourceKey(candidate) === entry.sourceKey)
+                  const countryName = countries.find((country) => country.countryCode === source?.countryCode)?.name ?? source?.countryCode
+                  return <div className="holiday-action-entry" key={holidayRemovalId(entry.sourceKey, { date: entry.actualDate, name: entry.name })}>
+                    <span>{entry.name} · {countryName}{source?.regionCode ? ` (${source.regionCode})` : ''}</span>
+                    <button className="outline-button" type="button" onClick={() => removeHoliday(entry)}>Remove</button>
+                  </div>
+                })}
+              </div>}
+              <label className="note-highlight">Highlight<input type="color" value={draft.color} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} /></label>
+            </div>
+            <div className="note-cell-preview" aria-label="Enlarged day cell preview">
+              <span className="eyebrow">PREVIEW</span>
+              <div className={`date-cell ${editingWeekday === 0 || editingWeekday === 6 ? 'is-weekend' : ''} ${editingHoliday ? 'has-holiday' : ''}`} style={{
+                width: `${previewCellSize[0] * 6}px`,
+                height: `${previewCellSize[1] * 6}px`,
+                borderWidth: `${notePreviewScale}px`,
+                '--day-holiday-color': editingHolidayColor,
+              } as CSSProperties}>
+                <button className={`date-mark ${editingHoliday ? 'is-holiday' : ''} ${draftIsMarked ? 'marked' : ''}`}
+                  style={{
+                    '--highlight-color': draft.color,
+                    '--day-holiday-color': editingHolidayColor,
+                    '--day-note-font-size': `${fontSizes.dayNoteFontSize * dateFontScale * notePreviewScale}mm`,
+                    '--day-number-font-size': `${dayNumberFontSize * notePreviewScale}mm`,
+                    '--day-number-right': `${dayNumberRight * notePreviewScale}mm`,
+                    '--date-mark-padding': `${0.5 * notePreviewScale}mm`,
+                    '--day-number-top': `${0.5 * notePreviewScale}mm`,
+                    '--day-note-top': `${3 * notePreviewScale}mm`,
+                    '--day-mark-ink': inkFor(previewBackground),
+                  } as CSSProperties}
+                  type="button" tabIndex={-1} aria-hidden="true">
+                  <span className="day-number">{Number(editingDate.slice(-2))}</span>
+                  {draft.text.trim() && <span className="day-note-text">{draft.text}</span>}
+                </button>
               </div>
-            })}
-          </div>}
-          <label className="note-highlight">Highlight<input type="color" value={draft.color} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} /></label>
+            </div>
+          </div>
           <div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => clearDay(editingDate)}>Clear day</button><button className="print-button" type="button" onClick={saveNote}>Save note</button></div>
         </section>
       </div>}

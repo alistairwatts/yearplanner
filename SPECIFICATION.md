@@ -35,7 +35,11 @@ Acceptance criteria:
 - Clicking a date opens an accessible editor for that date.
 - Clicking anywhere in a date cell, not just on its number, opens the note editor.
 - Note text is trimmed when saved and limited to 160 characters.
-- A note and its color appear in the corresponding calendar cell; text is legible and clipped or truncated rather than overflowing into another cell.
+- A note and its color appear in the corresponding calendar cell. Note text wraps within the cell and is clipped rather than overflowing into another cell.
+- Note text uses a black or white foreground, whichever has the higher WCAG contrast ratio against its current background.
+- The Page tab includes a global millimetre-based day-note font-size slider alongside the other typography sliders. It updates all planner notes immediately and persists across reloads and backups.
+- The right side of the Day Note dialog shows an enlarged version of the selected planner cell. Its width-to-height ratio and content sizing accurately scale from that date cell, including the date number, note wrapping and size, highlight, weekend, and holiday appearance.
+- The enlarged cell stays synchronized with the planner whenever the draft note text or highlight changes, the note font size changes, or planner settings alter the selected cell's dimensions, typography, or background. It reflects unsaved note edits immediately.
 - Saving an empty note with the default color removes the note.
 - Clearing a date removes its note and any date-specific holiday removal override.
 - Date notes and colors survive reloads.
@@ -82,10 +86,10 @@ Acceptance criteria:
 - Date content is aligned to the top of each cell, and every date cell retains enough height for its day number to remain visible in print.
 - Day numbers remain visible and sit at the top-right of their own cells in print. The last month, including its day numbers, must not be clipped at the page edge.
 - Calendar typography scales with the physical date-cell width and month-row height, preserving the A4 landscape sizing as its baseline; weekday labels follow column width, and month labels follow row height. Keep day numbers large enough to remain visible and clip or truncate note text within each cell on extreme custom paper proportions.
-- The Page tab provides millimetre-based font-size sliders for the title, weekday labels, month labels, month-cell year, and day numbers. Their values apply to the same screen and print sheet.
+- The Page tab provides millimetre-based font-size sliders for the title, weekday labels, month labels, month-cell year, day numbers, and day notes. Their values apply to the same screen and print sheet.
 - Standard paper sizes use recommended font sizes scaled from the A4 values by the square root of the paper-area ratio; landscape and portrait use the same recommendations.
-- An “Override font sizes” checkbox defaults off for standard papers. When off, show the paper-specific recommendations and disable the sliders. When enabled, enable the sliders and initialize their values to the current recommendations. Turning it off restores the recommendations.
-- Custom paper always forces the override checkbox on and keeps it checked and disabled. Custom font-size slider maxima scale by the square root of the custom paper-area ratio relative to A4, rounded to 0.1 mm; values are clamped when a dimension change lowers a maximum.
+- An “Override font sizes” checkbox defaults off for standard papers. When off, show the paper-specific recommendations and disable all typography sliders, including day notes. When enabled, enable the sliders and initialize their values to the current recommendations. Turning it off restores the recommendations.
+- Custom paper always forces the override checkbox on and keeps it checked and disabled. All custom font-size slider maxima scale by the square root of the custom paper-area ratio relative to A4, rounded to 0.1 mm; values are clamped when a dimension change lowers a maximum.
 - Preserve selected colors and readable day numbers and note text in print, subject to browser print-color settings.
 - Verify with print-media rendering and, when possible, a real browser print/PDF preview. Inspect the final row and the wrapper border, not only the screen view.
 
@@ -129,9 +133,10 @@ Acceptance criteria:
 ## 4. Configuration and Persistence
 
 - Persist planner configuration under local-storage key `year-planner:v1`.
-- Configuration includes start month/year, duration, week start, the country/region composer and weekend setting, the ordered holiday-source list and per-source weekend settings, removed holiday identities, paper/orientation/custom dimensions, font-size override state, the six theme colours, theme name, custom title settings, title/day-name/month-name/year-number/day-number font sizes in millimetres, and date-keyed notes.
-- Font-size defaults preserve the existing A4 landscape appearance: title 5.3 mm, day names 1.9 mm, month names 4.9 mm, year number 3.5 mm, and day number 2.6 mm. Slider ranges are respectively 2–12 mm, 0.8–5 mm, 1.5–7 mm, 1–5 mm, and 1–5 mm.
-- Base slider maxima are 12 mm for title, 5 mm for day names, 7 mm for month names, and 5 mm each for year and day numbers; each maximum is multiplied by the square root of paper area divided by A4 area. Minimums remain 2 mm, 0.8 mm, 1.5 mm, 1 mm, and 1 mm respectively.
+- Configuration includes start month/year, duration, week start, the country/region composer and weekend setting, the ordered holiday-source list and per-source weekend settings, removed holiday identities, paper/orientation/custom dimensions, font-size override state, the six theme colours, theme name, custom title settings, title/day-name/month-name/year-number/day-number/day-note font sizes in millimetres, and date-keyed notes.
+- Font-size defaults preserve the existing A4 landscape appearance: title 5.3 mm, day names 1.9 mm, month names 4.9 mm, year number 3.5 mm, day number 2.6 mm, and day notes 1.8 mm. Slider ranges are respectively 2–12 mm, 0.8–5 mm, 1.5–7 mm, 1–5 mm, 1–5 mm, and 0.5–4 mm.
+- Base slider maxima are 12 mm for title, 5 mm for day names, 7 mm for month names, and 5 mm each for year and day numbers, and 4 mm for day notes; each maximum is multiplied by the square root of paper area divided by A4 area. Minimums remain 2 mm, 0.8 mm, 1.5 mm, 1 mm, 1 mm, and 0.5 mm respectively.
+- The day-note font-size slider uses the same paper-scaled recommendations and override behavior as the other typography sliders. Its A4 default is 1.8 mm and its A4 range is 0.5–4 mm in 0.1 mm increments. Older saved planners and backups missing this setting use the paper-scaled recommendation.
 - Saved or imported planners with only the legacy pixel-based day-number size convert that value to millimetres; missing new font-size settings use the paper-scaled recommendations.
 - Saved custom themes persist separately under `year-planner:themes:v1`; legacy saved themes without a secondary holiday color derive one from the primary color.
 - Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, the Monochrome theme, default title, recommended A4 font sizes, and font-size overrides off.
@@ -142,11 +147,13 @@ Acceptance criteria:
 
 ## 5. Visual and Interaction Requirements
 
-- The configuration sidebar is split into four tabs (Calendar: title and date range; Holidays; Page: paper, layout, and typography sizes in millimetres; Style: theme and colours). It fills the viewport height beside the calendar, scrolls internally, and keeps the status message and save indicator pinned at its bottom. On narrow screens it stacks above the calendar.
+- The configuration sidebar is split into four tabs (Calendar: title and date range; Holidays; Page: paper, layout, and typography sizes in millimetres, including day notes; Style: theme and colours). It fills the viewport height beside the calendar, scrolls internally, and keeps the status message and save indicator pinned at its bottom. On narrow screens it stacks above the calendar.
 - The on-screen planner is a sheet with the exact aspect ratio of the selected paper and orientation. It is laid out at true paper size (including the 5 mm margin) and scaled to fit the available width (scale limited to 0.5–2; below that the preview scrolls horizontally). It uses the same styles as print, so it shows what will be printed. Date cells remain clickable.
 - Keep the calendar preview central.
 - Use explicit, stable table geometry; date buttons fill cells and do not cause row or column shifts.
 - Distinguish weekends, public holidays, and notes while preserving contrast. Holiday fill takes precedence over weekend fill. Do not specially format the current date.
+- Day-note text wraps within its date cell, is clipped at the cell boundary, and uses whichever of black or white has the higher WCAG contrast ratio against its rendered background.
+- The Day Note dialog places an enlarged selected-date cell beside the editor. Scale its full width and height, content, and typography proportionally from the current planner cell; keep it live with unsaved text, highlight and font-size edits, and every planner change affecting that cell.
 - Do not rely on color alone to communicate an interaction; date buttons have accessible names, and the note editor has dialog semantics and a clear label.
 - The print view hides controls, uses the configured paper orientation/size, retains day numbers, and does not clip the final month.
 - External web fonts may enhance the visual design, but fallbacks must remain readable if font loading fails.
@@ -167,10 +174,10 @@ Before calling a rebuild complete:
 1. `npm install` succeeds from the lockfile.
 2. `npm run build` passes TypeScript and Vite production compilation.
 3. Exercise calendar ranges crossing December/January, each week-start option, and duration limits.
-4. Exercise note create/edit/delete, legacy color migration, reload persistence, JSON export/import, and malformed import.
+4. Exercise note create/edit/delete, wrapping and cell clipping, contrast selection on light and dark highlights, slider persistence, live preview updates, legacy color migration, reload persistence, JSON export/import, and malformed import.
 5. Exercise holiday loading success/failure, regional filtering, a January range requiring the preceding year, and country-switch reset behavior.
 6. Verify weekend substitute collisions: a weekend holiday skips weekends, actual holidays, and prior substitute allocations; same-source-date holidays share a substitute.
-7. Verify standard paper recommendations, override enable/disable behavior, and custom paper's forced override state and paper-scaled slider maxima.
+7. Verify standard paper recommendations for all six typography sliders, including day notes; override enable/disable behavior; and custom paper's forced override state and paper-scaled slider maxima.
 8. Under print media, verify that day numbers remain visible at the top-right of each cell, date content is top-aligned, every date cell has enough room to show its number, the last month is not clipped, and the grid fills its available area without a visible gap.
 9. If actual user print output differs from automated print emulation, reproduce using the target browser and paper/orientation settings before changing layout rules.
 10. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Verify primary/secondary holiday colors, then save, reload, select, and delete a named theme.

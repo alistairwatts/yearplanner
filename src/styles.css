@@ -107,9 +107,9 @@ input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px;
 .date-cell, .empty-date { height: auto; padding: 0; border: 1px solid #c9cdca; }
 .date-cell { position: relative; vertical-align: top; }
 .empty-date { background: var(--empty-cell-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.date-mark { position: absolute; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; overflow: hidden; padding: .5mm; border: 0; color: #3f4448; background: #fffefa; cursor: pointer; font: 6.5pt 'DM Mono', monospace; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.date-mark > .day-number { position: absolute; top: .5mm; right: var(--day-number-right); font-size: var(--day-number-font-size); line-height: 1; }
-.day-note-text { display: block; max-width: 100%; overflow: hidden; margin-top: 3mm; color: #35413a; font: var(--day-note-font-size)/1.15 'DM Sans', sans-serif; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.date-mark { position: absolute; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; overflow: hidden; padding: var(--date-mark-padding, .5mm); border: 0; color: var(--day-mark-ink, #000000); background: #fffefa; cursor: pointer; font: 6.5pt 'DM Mono', monospace; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.date-mark > .day-number { position: absolute; top: var(--day-number-top, .5mm); right: var(--day-number-right); font-size: var(--day-number-font-size); line-height: 1; }
+.day-note-text { display: block; max-width: 100%; overflow: hidden; margin-top: var(--day-note-top, 3mm); color: inherit; font: var(--day-note-font-size)/1.15 'DM Sans', sans-serif; text-align: left; overflow-wrap: anywhere; white-space: normal; }
 .date-mark:hover { outline: 1px solid #8c969d; outline-offset: -1px; background: #f0f1ef; }
 .date-cell.is-weekend { background: var(--weekend-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .date-cell.is-weekend .date-mark:not(.marked) { background: transparent; }
@@ -118,10 +118,14 @@ input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px;
 .date-mark.marked { background: var(--highlight-color); }
 
 .dialog-backdrop { position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; padding: 18px; background: #17231dcc; }
-.note-dialog { position: relative; width: min(100%, 420px); padding: 28px; border: 1px solid #e2e6dc; border-radius: 4px; background: #fffefa; box-shadow: 0 18px 50px #17231d44; }
+.note-dialog { position: relative; width: min(100%, 780px); max-height: calc(100vh - 36px); overflow-y: auto; padding: 28px; border: 1px solid #e2e6dc; border-radius: 4px; background: #fffefa; box-shadow: 0 18px 50px #17231d44; }
 .eyebrow { color: #738075; font: 500 10px 'DM Mono', monospace; }
 .note-dialog h2 { margin: 8px 28px 22px 0; font: 500 21px/1.3 var(--serif); }
 .note-dialog textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
+.note-dialog-layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 28px; }
+.note-dialog-fields { display: grid; min-width: 0; gap: 16px; }
+.note-cell-preview { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 4px 8px; }
+.note-cell-preview > .date-cell { display: block; flex: 0 0 auto; }
 .holiday-actions { display: grid; gap: 8px; margin-top: 16px; }
 .holiday-actions p { margin: 0; color: #59665d; font-size: 12px; }
 .note-highlight { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; color: #506055; font-size: 11px; font-weight: 600; }
@@ -142,6 +146,9 @@ input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px;
   .controls { position: static; width: 100%; height: auto; border-right: 0; border-bottom: 1px solid #d9ddd4; }
   .controls-panel { overflow: visible; }
   .preview { padding: 18px 15px 17px; }
+  .note-dialog { padding: 24px 20px; }
+  .note-dialog-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .note-cell-preview { order: -1; }
 }
 @media (max-width: 390px) {
   .brand { gap: 6px; font-size: 12px; }
