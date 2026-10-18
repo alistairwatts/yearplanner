@@ -7,7 +7,8 @@ type Holiday = {
   subdivisionCodes: string[] | null
   holidayTypes: string[]
 }
-type DisplayHoliday = Holiday & { actualDate: string; isSubstitute: boolean }
+type HolidaySource = { countryCode: string; regionCode: string; moveWeekendHolidays: boolean }
+type DisplayHoliday = Holiday & { actualDate: string; isSubstitute: boolean; sourceKey: string }
 type CountryOption = { countryCode: string; name: string }
 type Palette = {
   accentColor: string
@@ -15,6 +16,7 @@ type Palette = {
   emptyCellColor: string
   weekendColor: string
   holidayColor: string
+  secondaryHolidayColor: string
 }
 type SavedTheme = { name: string; palette: Palette }
 type Tab = 'calendar' | 'holidays' | 'page' | 'style'
@@ -26,6 +28,8 @@ type Planner = Palette & {
   countryCode: string
   regionCode: string
   moveWeekendHolidays: boolean
+  holidaySources: HolidaySource[]
+  removedHolidayIds: string[]
   removedHolidayDates: string[]
   paper: string
   orientation: 'landscape' | 'portrait'
@@ -45,14 +49,14 @@ type Planner = Palette & {
 
 const STORAGE_KEY = 'year-planner:v1'
 const THEMES_KEY = 'year-planner:themes:v1'
-const paletteKeys = ['accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor'] as const
+const paletteKeys = ['accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'secondaryHolidayColor'] as const
 const paletteLabels: Record<keyof Palette, string> = {
-  accentColor: 'Accent', headerColor: 'Table heading', emptyCellColor: 'Empty cells', weekendColor: 'Weekends', holidayColor: 'Holidays',
+  accentColor: 'Accent', headerColor: 'Table heading', emptyCellColor: 'Empty cells', weekendColor: 'Weekends', holidayColor: 'Holidays (primary)', secondaryHolidayColor: 'Holidays (secondary)',
 }
 const presetThemes: { id: string; name: string; palette: Palette }[] = [
-  { id: 'monochrome', name: 'Monochrome', palette: { accentColor: '#222222', headerColor: '#d4d4d4', emptyCellColor: '#f2f2f2', weekendColor: '#e3e3e3', holidayColor: '#bcbcbc' } },
-  { id: 'ocean', name: 'Ocean', palette: { accentColor: '#1f4e79', headerColor: '#b9d2e8', emptyCellColor: '#eef3f7', weekendColor: '#dce5ec', holidayColor: '#9dc0df' } },
-  { id: 'sunset', name: 'Sunset', palette: { accentColor: '#a8436a', headerColor: '#f5c08a', emptyCellColor: '#fbf4ec', weekendColor: '#f6e3d5', holidayColor: '#f0a898' } },
+  { id: 'monochrome', name: 'Monochrome', palette: { accentColor: '#222222', headerColor: '#d4d4d4', emptyCellColor: '#f2f2f2', weekendColor: '#e3e3e3', holidayColor: '#bcbcbc', secondaryHolidayColor: '#dedede' } },
+  { id: 'ocean', name: 'Ocean', palette: { accentColor: '#1f4e79', headerColor: '#b9d2e8', emptyCellColor: '#eef3f7', weekendColor: '#dce5ec', holidayColor: '#9dc0df', secondaryHolidayColor: '#d1e3ef' } },
+  { id: 'sunset', name: 'Sunset', palette: { accentColor: '#a8436a', headerColor: '#f5c08a', emptyCellColor: '#fbf4ec', weekendColor: '#f6e3d5', holidayColor: '#f0a898', secondaryHolidayColor: '#f8d6ce' } },
 ]
 const maxTitleLength = 80
 const maxThemeNameLength = 40
@@ -140,13 +144,30 @@ function pickPalette(source: Palette): Palette {
   return Object.fromEntries(paletteKeys.map((key) => [key, source[key]])) as Palette
 }
 
+function lighterColor(hex: string) {
+  return `#${[1, 3, 5].map((index) => Math.round(parseInt(hex.slice(index, index + 2), 16) * 0.55 + 255 * 0.45).toString(16).padStart(2, '0')).join('')}`
+}
+
+function holidaySourceKey(source: Pick<HolidaySource, 'countryCode' | 'regionCode'>) {
+  return JSON.stringify([source.countryCode, source.regionCode])
+}
+
+function holidayRemovalId(sourceKey: string, holiday: Pick<Holiday, 'date' | 'name'>) {
+  return JSON.stringify([sourceKey, holiday.date, holiday.name])
+}
+
 function readSavedThemes(): SavedTheme[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(THEMES_KEY) ?? '[]')
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is SavedTheme => isRecord(item) && typeof item.name === 'string' && item.name.length > 0
-      && isRecord(item.palette) && paletteKeys.every((key) => isHexColor((item.palette as Record<string, unknown>)[key])))
-      .map((item) => ({ name: item.name.slice(0, maxThemeNameLength), palette: pickPalette(item.palette) }))
+    return parsed.flatMap((item) => {
+      if (!isRecord(item) || typeof item.name !== 'string' || item.name.length === 0 || !isRecord(item.palette)) return []
+      const savedPalette = item.palette
+      if (!paletteKeys.filter((key) => key !== 'secondaryHolidayColor').every((key) => isHexColor(savedPalette[key]))
+        || (savedPalette.secondaryHolidayColor !== undefined && !isHexColor(savedPalette.secondaryHolidayColor))) return []
+      const palette = { ...savedPalette, secondaryHolidayColor: savedPalette.secondaryHolidayColor ?? lighterColor(savedPalette.holidayColor as string) } as Palette
+      return [{ name: item.name.slice(0, maxThemeNameLength), palette: pickPalette(palette) }]
+    })
   } catch {
     return []
   }
@@ -169,7 +190,7 @@ function normalizeNoteColor(value: unknown) {
 
 function normalizePlannerData(data: unknown): Planner {
   if (!isRecord(data)) throw new Error('This file does not look like a planner backup.')
-  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'fontSizesOverridden', 'accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'dayNumberSize', ...Object.keys(fontSizeLimits), 'useCustomTitle', 'title', 'theme', 'notes']
+  const knownKeys = ['startMonth', 'startYear', 'duration', 'weekStartsOn', 'countryCode', 'regionCode', 'moveWeekendHolidays', 'holidaySources', 'removedHolidayIds', 'removedHolidayDates', 'paper', 'orientation', 'customWidth', 'customHeight', 'fontSizesOverridden', 'accentColor', 'headerColor', 'emptyCellColor', 'weekendColor', 'holidayColor', 'secondaryHolidayColor', 'dayNumberSize', ...Object.keys(fontSizeLimits), 'useCustomTitle', 'title', 'theme', 'notes']
   if (!knownKeys.some((key) => key in data)) throw new Error('This file does not look like a planner backup.')
 
   const planner = defaultPlanner()
@@ -195,6 +216,25 @@ function normalizePlannerData(data: unknown): Planner {
     planner.moveWeekendHolidays = data.moveWeekendHolidays
   } else {
     planner.moveWeekendHolidays = planner.countryCode === 'GB'
+  }
+  if (data.holidaySources !== undefined) {
+    if (!Array.isArray(data.holidaySources) || !data.holidaySources.every((source) => isRecord(source)
+      && typeof source.countryCode === 'string' && /^[A-Za-z]{2}$/.test(source.countryCode)
+      && typeof source.regionCode === 'string' && typeof source.moveWeekendHolidays === 'boolean')) {
+      throw new Error('Invalid holiday sources.')
+    }
+    const seenSources = new Set<string>()
+    planner.holidaySources = data.holidaySources.flatMap((source) => {
+      const normalized = { countryCode: source.countryCode.toUpperCase(), regionCode: source.regionCode, moveWeekendHolidays: source.moveWeekendHolidays }
+      const key = holidaySourceKey(normalized)
+      if (seenSources.has(key)) return []
+      seenSources.add(key)
+      return [normalized]
+    })
+  }
+  if (data.removedHolidayIds !== undefined) {
+    if (!Array.isArray(data.removedHolidayIds) || !data.removedHolidayIds.every((id) => typeof id === 'string')) throw new Error('Invalid removed holidays.')
+    planner.removedHolidayIds = [...new Set(data.removedHolidayIds)]
   }
   if (data.removedHolidayDates !== undefined) {
     if (!Array.isArray(data.removedHolidayDates) || !data.removedHolidayDates.every(isDateKey)) throw new Error('Invalid removed holiday dates.')
@@ -242,6 +282,7 @@ function normalizePlannerData(data: unknown): Planner {
     planner[key] = value
     hasColors = true
   }
+  if (data.secondaryHolidayColor === undefined && data.holidayColor !== undefined) planner.secondaryHolidayColor = lighterColor(planner.holidayColor)
   if (hasColors) {
     planner.theme = 'custom'
     if (data.headerColor === undefined) planner.headerColor = '#f0f1ef'
@@ -305,6 +346,8 @@ function defaultPlanner(): Planner {
     countryCode,
     regionCode: '',
     moveWeekendHolidays: countryCode === 'GB',
+    holidaySources: [],
+    removedHolidayIds: [],
     removedHolidayDates: [],
     paper: 'A4',
     orientation: 'landscape',
@@ -337,9 +380,12 @@ function dateKey(year: number, month: number, day: number) {
 function App() {
   const [planner, setPlanner] = useState<Planner>(readSavedPlanner)
   const [countries, setCountries] = useState<CountryOption[]>([])
-  const [allHolidays, setAllHolidays] = useState<Holiday[]>([])
+  const [countryHolidays, setCountryHolidays] = useState<Holiday[]>([])
+  const [countryDataReady, setCountryDataReady] = useState(false)
+  const [countryLoading, setCountryLoading] = useState(false)
+  const [sourceHolidays, setSourceHolidays] = useState<Record<string, Holiday[]>>({})
+  const [sourceLoading, setSourceLoading] = useState(false)
   const [holidayStatus, setHolidayStatus] = useState('')
-  const [loadingHolidays, setLoadingHolidays] = useState(false)
   const [editingDate, setEditingDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<Note>({ text: '', color: '#fffefa' })
   const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(readSavedThemes)
@@ -348,7 +394,7 @@ function App() {
   const [availableWidth, setAvailableWidth] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
   const sheetScroll = useRef<HTMLDivElement>(null)
-  const holidayRequestId = useRef(0)
+  const holidayDataCache = useRef(new Map<string, Promise<Holiday[]>>())
 
   useEffect(() => {
     try {
@@ -395,6 +441,70 @@ function App() {
     return { year: date.getUTCFullYear(), month: date.getUTCMonth() }
   }), [planner.startMonth, planner.startYear, planner.duration])
 
+  const holidayYears = useMemo(() => {
+    const years = new Set(months.map(({ year }) => year))
+    if (planner.startMonth === 0) years.add(months[0].year - 1)
+    return [...years]
+  }, [months, planner.startMonth])
+
+  function fetchCountryHolidays(countryCode: string, years: number[]) {
+    const cacheKey = JSON.stringify([countryCode, years])
+    let request = holidayDataCache.current.get(cacheKey)
+    if (!request) {
+      request = Promise.all(years.map(async (year) => {
+        const response = await fetch(`https://nagerholidays.com/api/v4/Holidays/${countryCode}/${year}`)
+        if (!response.ok) throw new Error(`Holiday service returned ${response.status} for ${year}.`)
+        return await response.json() as Holiday[]
+      })).then((results) => results.flat().filter((holiday) => holiday.holidayTypes?.includes('Public')))
+      holidayDataCache.current.set(cacheKey, request)
+      request.catch(() => holidayDataCache.current.delete(cacheKey))
+    }
+    return request
+  }
+
+  useEffect(() => {
+    let active = true
+    const country = planner.countryCode.trim().toUpperCase()
+    setCountryHolidays([])
+    setCountryDataReady(false)
+    if (!/^[A-Z]{2}$/.test(country)) {
+      setCountryLoading(false)
+      return () => { active = false }
+    }
+    setCountryLoading(true)
+    fetchCountryHolidays(country, holidayYears)
+      .then((data) => {
+        if (active) {
+          setCountryHolidays(data)
+          setCountryDataReady(true)
+          setHolidayStatus(`Loaded public holidays for ${country}.`)
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setHolidayStatus(error instanceof Error ? error.message : 'Could not load public holidays.')
+      })
+      .finally(() => { if (active) setCountryLoading(false) })
+    return () => { active = false }
+  }, [planner.countryCode, holidayYears])
+
+  useEffect(() => {
+    let active = true
+    const sources = planner.holidaySources
+    if (sources.length === 0) {
+      setSourceHolidays({})
+      setSourceLoading(false)
+      return () => { active = false }
+    }
+    setSourceLoading(true)
+    Promise.all(sources.map(async (source) => [holidaySourceKey(source), await fetchCountryHolidays(source.countryCode, holidayYears)] as const))
+      .then((entries) => { if (active) setSourceHolidays(Object.fromEntries(entries)) })
+      .catch((error: unknown) => {
+        if (active) setHolidayStatus(error instanceof Error ? error.message : 'Could not refresh public holidays.')
+      })
+      .finally(() => { if (active) setSourceLoading(false) })
+    return () => { active = false }
+  }, [planner.holidaySources, holidayYears])
+
   const calendarSpan = useMemo(() => {
     const rows = months.map(({ year, month }) => {
       const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay()
@@ -411,11 +521,11 @@ function App() {
     }
   }, [months, planner.weekStartsOn])
 
-  const regions = useMemo(() => [...new Set(allHolidays.flatMap((holiday) => holiday.subdivisionCodes ?? []))].sort(), [allHolidays])
-  const holidays = useMemo(() => {
-    const region = planner.regionCode
-    const selected = allHolidays
-      .filter((holiday) => !region || holiday.subdivisionCodes === null || holiday.subdivisionCodes.includes(region))
+  const regions = useMemo(() => [...new Set(countryHolidays.flatMap((holiday) => holiday.subdivisionCodes ?? []))].sort(), [countryHolidays])
+  const holidayCandidates = useMemo(() => planner.holidaySources.flatMap((source) => {
+    const sourceKey = holidaySourceKey(source)
+    const selected = (sourceHolidays[sourceKey] ?? [])
+      .filter((holiday) => !source.regionCode || holiday.subdivisionCodes === null || holiday.subdivisionCodes.includes(source.regionCode))
       .sort((first, second) => first.date.localeCompare(second.date))
     const actualDates = new Set(selected.map((holiday) => holiday.date))
     const movedDates = new Set<string>()
@@ -424,11 +534,10 @@ function App() {
 
     for (const holiday of selected) {
       const weekday = new Date(`${holiday.date}T00:00:00Z`).getUTCDay()
-      if (!planner.moveWeekendHolidays || (weekday !== 0 && weekday !== 6)) {
-        displayed.push({ ...holiday, actualDate: holiday.date, isSubstitute: false })
+      if (!source.moveWeekendHolidays || (weekday !== 0 && weekday !== 6)) {
+        displayed.push({ ...holiday, actualDate: holiday.date, isSubstitute: false, sourceKey })
         continue
       }
-
       let substituteDate = movedByOriginalDate.get(holiday.date)
       if (!substituteDate) {
         const candidate = new Date(`${holiday.date}T00:00:00Z`)
@@ -439,11 +548,12 @@ function App() {
         movedByOriginalDate.set(holiday.date, substituteDate)
         movedDates.add(substituteDate)
       }
-      displayed.push({ ...holiday, date: substituteDate, actualDate: holiday.date, isSubstitute: true })
+      displayed.push({ ...holiday, date: substituteDate, actualDate: holiday.date, isSubstitute: true, sourceKey })
     }
-
-    return displayed.filter((holiday) => !planner.removedHolidayDates.includes(holiday.date))
-  }, [allHolidays, planner.moveWeekendHolidays, planner.regionCode, planner.removedHolidayDates])
+    return displayed
+  }), [planner.holidaySources, sourceHolidays])
+  const holidays = useMemo(() => holidayCandidates.filter((holiday) => !planner.removedHolidayDates.includes(holiday.date)
+    && !planner.removedHolidayIds.includes(holidayRemovalId(holiday.sourceKey, { date: holiday.actualDate, name: holiday.name }))), [holidayCandidates, planner.removedHolidayDates, planner.removedHolidayIds])
 
   const [shortEdge, longEdge] = planner.paper === 'Custom'
     ? [Math.max(80, Math.min(planner.customHeight, 1200)), Math.max(80, Math.min(planner.customWidth, 1200))]
@@ -550,11 +660,6 @@ function App() {
     update('theme', 'custom')
   }
 
-  function invalidateHolidayRequest() {
-    holidayRequestId.current += 1
-    setLoadingHolidays(false)
-  }
-
   function editDate(key: string) {
     setEditingDate(key)
     setDraft(planner.notes[key] ?? { text: '', color: '#fffefa' })
@@ -571,35 +676,6 @@ function App() {
     setEditingDate(null)
   }
 
-  async function loadHolidays() {
-    const country = planner.countryCode.trim().toUpperCase()
-    if (!/^[A-Z]{2}$/.test(country)) {
-      setHolidayStatus('Enter a two-letter ISO country code.')
-      return
-    }
-    const years = new Set(months.map(({ year }) => year))
-    if (planner.startMonth === 0) years.add(months[0].year - 1)
-    const requestId = ++holidayRequestId.current
-    setLoadingHolidays(true)
-    setHolidayStatus('')
-    try {
-      const results = await Promise.all([...years].map(async (year) => {
-        const response = await fetch(`https://nagerholidays.com/api/v4/Holidays/${country}/${year}`)
-        if (!response.ok) throw new Error(`Holiday service returned ${response.status} for ${year}.`)
-        return await response.json() as Holiday[]
-      }))
-      if (requestId !== holidayRequestId.current) return
-      const all = results.flat().filter((holiday) => holiday.holidayTypes?.includes('Public'))
-      setAllHolidays(all)
-      setHolidayStatus(`Loaded public holidays for ${country}. Choose a region to filter them.`)
-      update('countryCode', country)
-    } catch (error) {
-      if (requestId === holidayRequestId.current) setHolidayStatus(error instanceof Error ? error.message : 'Could not load public holidays.')
-    } finally {
-      if (requestId === holidayRequestId.current) setLoadingHolidays(false)
-    }
-  }
-
   function exportPlanner() {
     const blob = new Blob([JSON.stringify(planner, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -614,9 +690,7 @@ function App() {
     if (!file) return
     try {
       const planner = normalizePlannerData(JSON.parse(await file.text()))
-      invalidateHolidayRequest()
       setPlanner(planner)
-      setAllHolidays([])
       setHolidayStatus('Planner backup restored.')
     } catch (error) {
       setHolidayStatus(error instanceof Error ? error.message : 'Could not read this planner backup.')
@@ -625,15 +699,58 @@ function App() {
     }
   }
 
-  function removeHoliday(date: string) {
-    setPlanner((current) => ({ ...current, removedHolidayDates: [...new Set([...current.removedHolidayDates, date])] }))
+  function addHolidaySource() {
+    const source: HolidaySource = {
+      countryCode: planner.countryCode,
+      regionCode: planner.regionCode,
+      moveWeekendHolidays: planner.moveWeekendHolidays,
+    }
+    const key = holidaySourceKey(source)
+    if (planner.holidaySources.some((entry) => holidaySourceKey(entry) === key)) {
+      setHolidayStatus('That country and region are already added.')
+      return
+    }
+    update('holidaySources', [...planner.holidaySources, source])
+    setHolidayStatus('Holiday source added.')
+  }
+
+  function removeHolidaySource(sourceKey: string) {
+    setPlanner((current) => ({
+      ...current,
+      holidaySources: current.holidaySources.filter((source) => holidaySourceKey(source) !== sourceKey),
+      removedHolidayIds: current.removedHolidayIds.filter((id) => {
+        try { return JSON.parse(id)[0] !== sourceKey } catch { return true }
+      }),
+    }))
+  }
+
+  function moveHolidaySource(index: number, offset: -1 | 1) {
+    setPlanner((current) => {
+      const nextIndex = index + offset
+      if (nextIndex < 0 || nextIndex >= current.holidaySources.length) return current
+      const holidaySources = [...current.holidaySources]
+      ;[holidaySources[index], holidaySources[nextIndex]] = [holidaySources[nextIndex], holidaySources[index]]
+      return { ...current, holidaySources }
+    })
+  }
+
+  function removeHoliday(holiday: DisplayHoliday) {
+    const id = holidayRemovalId(holiday.sourceKey, { date: holiday.actualDate, name: holiday.name })
+    setPlanner((current) => ({ ...current, removedHolidayIds: [...new Set([...current.removedHolidayIds, id])] }))
   }
 
   function clearDay(date: string) {
+    const holidayIds = new Set(holidayCandidates.filter((holiday) => holiday.date === date)
+      .map((holiday) => holidayRemovalId(holiday.sourceKey, { date: holiday.actualDate, name: holiday.name })))
     setPlanner((current) => {
       const notes = { ...current.notes }
       delete notes[date]
-      return { ...current, notes, removedHolidayDates: current.removedHolidayDates.filter((removedDate) => removedDate !== date) }
+      return {
+        ...current,
+        notes,
+        removedHolidayDates: current.removedHolidayDates.filter((removedDate) => removedDate !== date),
+        removedHolidayIds: current.removedHolidayIds.filter((id) => !holidayIds.has(id)),
+      }
     })
     setDraft({ text: '', color: '#fffefa' })
     setEditingDate(null)
@@ -641,9 +758,7 @@ function App() {
 
   function clearAll() {
     if (!window.confirm('Clear all planner settings, notes, holiday overrides, and loaded holiday data?')) return
-    invalidateHolidayRequest()
     setPlanner(defaultPlanner())
-    setAllHolidays([])
     setHolidayStatus('')
     setEditingDate(null)
   }
@@ -663,12 +778,17 @@ function App() {
           const note = planner.notes[key]
           const dayHolidays = holidays.filter((entry) => entry.date === key)
           const holiday = dayHolidays[0]
+          const primarySourceKey = planner.holidaySources[0] ? holidaySourceKey(planner.holidaySources[0]) : ''
+          const dayHolidayColor = dayHolidays.some((entry) => entry.sourceKey === primarySourceKey) ? planner.holidayColor : planner.secondaryHolidayColor
           const weekday = new Date(Date.UTC(year, month, day)).getUTCDay()
           return (
-              <td className={`date-cell ${weekday === 0 || weekday === 6 ? 'is-weekend' : ''} ${holiday ? 'has-holiday' : ''}`} key={column}>
+              <td className={`date-cell ${weekday === 0 || weekday === 6 ? 'is-weekend' : ''} ${holiday ? 'has-holiday' : ''}`} style={holiday ? { '--day-holiday-color': dayHolidayColor } as CSSProperties : undefined} key={column}>
               <button
                 className={`date-mark ${holiday ? 'is-holiday' : ''} ${note ? 'marked' : ''}`}
-                style={note ? { '--highlight-color': note.color } as CSSProperties : undefined}
+                style={{
+                  ...(note ? { '--highlight-color': note.color } : {}),
+                  ...(holiday ? { '--day-holiday-color': dayHolidayColor } : {}),
+                } as CSSProperties}
                 type="button"
                 title={[note?.text, ...dayHolidays.map((entry) => entry.name)].filter(Boolean).join(' | ') || `Add a note for ${key}`}
                 aria-label={`${key}${note ? `, note: ${note.text}` : ''}${holiday ? `, ${dayHolidays.map((entry) => entry.name).join(', ')}` : ''}`}
@@ -697,6 +817,7 @@ function App() {
       '--empty-cell-color': planner.emptyCellColor,
       '--weekend-color': planner.weekendColor,
       '--holiday-color': planner.holidayColor,
+      '--secondary-holiday-color': planner.secondaryHolidayColor,
       '--title-font-size': `${fontSizes.titleFontSize}mm`,
       '--weekday-font-size': `${dayNameFontSize}mm`,
       '--month-name-font-size': `${monthNameFontSize}mm`,
@@ -766,12 +887,9 @@ function App() {
             <legend>PUBLIC HOLIDAYS</legend>
             <label>Country
               <select value={planner.countryCode} onChange={(event) => {
-                invalidateHolidayRequest()
                 update('countryCode', event.target.value)
                 update('regionCode', '')
                 update('moveWeekendHolidays', event.target.value === 'GB')
-                update('removedHolidayDates', [])
-                setAllHolidays([])
                 setHolidayStatus('')
               }}>
                 {countries.length === 0 && <option value={planner.countryCode}>Loading countries...</option>}
@@ -779,7 +897,7 @@ function App() {
               </select>
             </label>
             <label>Region <span className="optional">optional</span>
-              <select value={planner.regionCode} onChange={(event) => update('regionCode', event.target.value)}>
+              <select value={planner.regionCode} disabled={!countryDataReady || countryLoading} onChange={(event) => update('regionCode', event.target.value)}>
                 <option value="">All regions</option>
                 {regions.map((region) => <option value={region} key={region}>{region}</option>)}
               </select>
@@ -788,10 +906,28 @@ function App() {
               <input type="checkbox" checked={planner.moveWeekendHolidays} onChange={(event) => update('moveWeekendHolidays', event.target.checked)} />
               Move weekend holidays to the next available weekday
             </label>
-            <button className="outline-button" type="button" onClick={() => void loadHolidays()} disabled={loadingHolidays}>
-              {loadingHolidays ? 'Loading holidays...' : 'Load public holidays'}
+            <button className="outline-button" type="button" onClick={addHolidaySource} disabled={!countryDataReady || countryLoading}>
+              Add Holidays
             </button>
-            <p className="field-hint">Holiday data provided by Nager.Date. Internet connection required.</p>
+            <p className="field-hint">{countryLoading ? 'Fetching holiday data...' : 'Holiday data provided by Nager.Date. Internet connection required.'}</p>
+            {planner.holidaySources.length > 0 && <ol className="holiday-source-list" aria-label="Added holiday sources">
+              {planner.holidaySources.map((source, index) => {
+                const sourceKey = holidaySourceKey(source)
+                const countryName = countries.find((country) => country.countryCode === source.countryCode)?.name ?? source.countryCode
+                return <li key={sourceKey}>
+                  <span className="holiday-source-label">
+                    <strong>{countryName}</strong>
+                    <small>{source.regionCode || 'All regions'} · Weekend shifts {source.moveWeekendHolidays ? 'on' : 'off'}</small>
+                  </span>
+                  <span className="holiday-source-actions">
+                    <button type="button" aria-label={`Move ${countryName} ${source.regionCode || 'all regions'} up`} title="Move up" disabled={index === 0} onClick={() => moveHolidaySource(index, -1)}>↑</button>
+                    <button type="button" aria-label={`Move ${countryName} ${source.regionCode || 'all regions'} down`} title="Move down" disabled={index === planner.holidaySources.length - 1} onClick={() => moveHolidaySource(index, 1)}>↓</button>
+                    <button type="button" aria-label={`Remove ${countryName} ${source.regionCode || 'all regions'}`} title="Remove" onClick={() => removeHolidaySource(sourceKey)}>×</button>
+                  </span>
+                </li>
+              })}
+            </ol>}
+            {sourceLoading && <p className="field-hint">Refreshing added holiday sources...</p>}
           </fieldset>}
 
           {tab === 'page' && <fieldset className="control-group print-settings">
@@ -880,8 +1016,15 @@ function App() {
           <h2 id="note-title">{new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(`${editingDate}T00:00:00Z`))}</h2>
           <label>Note <textarea autoFocus rows={3} maxLength={160} value={draft.text} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))} placeholder="Add a plan, reminder, or occasion" /></label>
           {holidays.some((holiday) => holiday.date === editingDate) && <div className="holiday-actions">
-            <p>Public holiday: {holidays.filter((holiday) => holiday.date === editingDate).map((holiday) => holiday.name).join(', ')}</p>
-            <button className="outline-button" type="button" onClick={() => removeHoliday(editingDate)}>Remove holiday from this day</button>
+            <p>Public holidays</p>
+            {holidays.filter((holiday) => holiday.date === editingDate).map((entry) => {
+              const source = planner.holidaySources.find((candidate) => holidaySourceKey(candidate) === entry.sourceKey)
+              const countryName = countries.find((country) => country.countryCode === source?.countryCode)?.name ?? source?.countryCode
+              return <div className="holiday-action-entry" key={holidayRemovalId(entry.sourceKey, { date: entry.actualDate, name: entry.name })}>
+                <span>{entry.name} · {countryName}{source?.regionCode ? ` (${source.regionCode})` : ''}</span>
+                <button className="outline-button" type="button" onClick={() => removeHoliday(entry)}>Remove</button>
+              </div>
+            })}
           </div>}
           <label className="note-highlight">Highlight<input type="color" value={draft.color} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} /></label>
           <div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => clearDay(editingDate)}>Clear day</button><button className="print-button" type="button" onClick={saveNote}>Save note</button></div>

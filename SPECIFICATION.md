@@ -42,16 +42,19 @@ Acceptance criteria:
 
 ### Story C: Show public holidays
 
-As a planner, I can load public holidays for a country and optionally filter by region.
+As a planner, I can add public holidays from multiple countries and regions.
 
 Acceptance criteria:
 - Retrieve available countries from `https://nagerholidays.com/api/v4/Countries/Available`.
 - Retrieve each needed year from `https://nagerholidays.com/api/v4/Holidays/{countryCode}/{year}` and display records whose `holidayTypes` include `Public`.
-- A selected region includes holidays whose subdivision list is null (national) or includes that region.
-- Region choices are derived from the loaded data.
+- Fetch holiday data as soon as a country is selected; keep the Region control disabled until the request succeeds.
+- A selected region includes holidays whose subdivision list is null (national) or includes that region. Region choices are derived from the fetched data, alongside “All regions”.
+- “Add Holidays” adds the selected country/region and weekend movement setting to a persistent, ordered source list. Do not add duplicate country/region entries; allow distinct regions from one country.
+- Source order determines holiday color priority: the first source uses the primary holiday color, and all later sources use the secondary color. If a date has a holiday from the first source, use the primary color.
+- Sources can be moved up or down and removed. Removing a source also clears its holiday-removal overrides.
+- Refresh every added source when the planner’s required year span changes. Include the preceding year when the range begins in January.
 - Loading state, success, invalid country code, network failure, and HTTP errors are communicated without making the rest of the planner unusable.
-- If the range begins in January, fetch the preceding year as well so weekend holidays nominally dated in December can be shifted into the selected range.
-- Changing country clears the selected region, loaded holidays, and date-based removal overrides. The weekend-movement default is enabled for `GB` and disabled for other countries.
+- The weekend-movement checkbox defaults on for `GB` and off for other countries; its value is captured when that source is added.
 - The app remains usable if the country list or holiday API cannot be reached.
 
 ### Story D: Handle weekend substitutes predictably
@@ -59,11 +62,12 @@ Acceptance criteria:
 As a planner, I can choose whether weekend-dated holidays are displayed on the next available weekday.
 
 Acceptance criteria:
-- Substitute movement is a user-controlled checkbox and defaults on for the United Kingdom.
-- When on, a Saturday or Sunday holiday moves forward to the next weekday that is not a weekend, another actual holiday, or a date already assigned to a substitute.
+- Substitute movement is a user-controlled checkbox captured per source and defaults on for the United Kingdom.
+- When on, a Saturday or Sunday holiday moves forward to the next weekday that is not a weekend, another actual holiday from that source, or a date already assigned to a substitute from that source. Different sources may land on the same date.
 - Multiple holidays with the same original date share the same substitute date.
 - When off, holidays remain on their source dates.
-- A removed-holiday override suppresses the displayed holiday for that calendar date and persists across reloads. Country changes clear these date-based overrides to avoid suppressing unrelated new-country holidays.
+- Removing a named holiday suppresses that source’s matching observance and persists across reloads. Other sources and other named holidays on that date remain visible.
+- Removing and re-adding a source starts with its holidays restored.
 - Removing a holiday does not remove a note on the same date.
 
 ### Story E: Print the planner
@@ -115,7 +119,7 @@ Acceptance criteria:
 As a planner, I can choose or build a colour scheme, including the table heading colour.
 
 Acceptance criteria:
-- A theme is five colours: accent (month labels, title, buttons), table heading background, empty cells, weekend cells, and holiday cells.
+- A theme is six colours: accent (month labels, title, buttons), table heading background, empty cells, weekend cells, primary holiday cells, and secondary holiday cells.
 - Built-in themes: Monochrome (black, white, greys; the default), Ocean (blues with grey), and Sunset (plum, apricot, coral).
 - Selecting a theme copies its colours into the planner. Each colour has a colour input; changing any colour switches the theme to "Custom".
 - Text on the table heading and on accent-coloured surfaces is black or white, whichever has the higher WCAG contrast ratio against the background (white when relative luminance is below 0.179).
@@ -125,11 +129,11 @@ Acceptance criteria:
 ## 4. Configuration and Persistence
 
 - Persist planner configuration under local-storage key `year-planner:v1`.
-- Configuration includes start month/year, duration, week start, country/region, weekend movement, removed holiday dates, paper/orientation/custom dimensions, font-size override state, the five theme colours, theme name, custom title settings, title/day-name/month-name/year-number/day-number font sizes in millimetres, and date-keyed notes.
+- Configuration includes start month/year, duration, week start, the country/region composer and weekend setting, the ordered holiday-source list and per-source weekend settings, removed holiday identities, paper/orientation/custom dimensions, font-size override state, the six theme colours, theme name, custom title settings, title/day-name/month-name/year-number/day-number font sizes in millimetres, and date-keyed notes.
 - Font-size defaults preserve the existing A4 landscape appearance: title 5.3 mm, day names 1.9 mm, month names 4.9 mm, year number 3.5 mm, and day number 2.6 mm. Slider ranges are respectively 2–12 mm, 0.8–5 mm, 1.5–7 mm, 1–5 mm, and 1–5 mm.
 - Base slider maxima are 12 mm for title, 5 mm for day names, 7 mm for month names, and 5 mm each for year and day numbers; each maximum is multiplied by the square root of paper area divided by A4 area. Minimums remain 2 mm, 0.8 mm, 1.5 mm, 1 mm, and 1 mm respectively.
 - Saved or imported planners with only the legacy pixel-based day-number size convert that value to millimetres; missing new font-size settings use the paper-scaled recommendations.
-- Saved custom themes persist separately under `year-planner:themes:v1`.
+- Saved custom themes persist separately under `year-planner:themes:v1`; legacy saved themes without a secondary holiday color derive one from the primary color.
 - Defaults: current month and year, 14 months, Sunday week start, browser-locale country when available (otherwise `GB`), A4 landscape, the Monochrome theme, default title, recommended A4 font sizes, and font-size overrides off.
 - Backups lacking theme fields import as the Monochrome defaults; backups with colours but no theme name import as "Custom" with the legacy heading colour `#f0f1ef`.
 - Treat local storage as optional: malformed or unavailable storage must not prevent the app from starting. Show a useful status when changes cannot be saved.
@@ -169,7 +173,7 @@ Before calling a rebuild complete:
 7. Verify standard paper recommendations, override enable/disable behavior, and custom paper's forced override state and paper-scaled slider maxima.
 8. Under print media, verify that day numbers remain visible at the top-right of each cell, date content is top-aligned, every date cell has enough room to show its number, the last month is not clipped, and the grid fills its available area without a visible gap.
 9. If actual user print output differs from automated print emulation, reproduce using the target browser and paper/orientation settings before changing layout rules.
-10. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Save, reload, select, and delete a named theme.
+10. Verify each theme and a custom colour: heading and month-label text switch between black and white for light and dark backgrounds. Verify primary/secondary holiday colors, then save, reload, select, and delete a named theme.
 11. Verify the sheet's aspect ratio matches the paper for each size and orientation and that print output matches the on-screen sheet.
 
 ## 8. Out of Scope

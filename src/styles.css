@@ -62,6 +62,19 @@ input[type='number'] { appearance: textfield; }
 .outline-button:hover { background: #e8ece4; }
 .outline-button:disabled { cursor: not-allowed; opacity: .55; }
 .field-hint { margin: -5px 0 0; color: #879088; font-size: 10px; line-height: 1.5; }
+.holiday-source-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.holiday-source-list li { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; padding-top: 7px; border-top: 1px solid #d9ddd4; }
+.holiday-source-label { display: grid; min-width: 0; gap: 2px; color: #35483b; font-size: 11px; }
+.holiday-source-label strong, .holiday-source-label small { overflow-wrap: anywhere; }
+.holiday-source-label small { color: #78827a; font-size: 9px; font-weight: 400; }
+.holiday-source-actions { display: flex; flex: 0 0 auto; gap: 2px; }
+.holiday-source-actions button { width: 25px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 2px; background: transparent; color: #506055; cursor: pointer; font-size: 15px; }
+.holiday-source-actions button:hover:not(:disabled) { border-color: #c9d2c8; background: #e8ece4; }
+.holiday-source-actions button:disabled { cursor: not-allowed; opacity: .35; }
+.holiday-actions { display: grid; gap: 8px; }
+.holiday-action-entry { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.holiday-action-entry > span { color: #59665d; font-size: 11px; line-height: 1.4; }
+.holiday-action-entry .outline-button { width: auto; min-height: 30px; padding: 0 9px; flex: 0 0 auto; }
 .custom-size { margin-top: -1px; }
 input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px; cursor: pointer; }
 .status-message { color: #42624e; font-size: 11px; line-height: 1.5; }
@@ -100,8 +113,8 @@ input[type='color'] { width: 100%; height: 34px; min-height: 34px; padding: 3px;
 .date-mark:hover { outline: 1px solid #8c969d; outline-offset: -1px; background: #f0f1ef; }
 .date-cell.is-weekend { background: var(--weekend-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .date-cell.is-weekend .date-mark:not(.marked) { background: transparent; }
-.date-cell.has-holiday { background: var(--holiday-color); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.date-mark.is-holiday:not(.marked), .date-cell.is-weekend .date-mark.is-holiday:not(.marked) { background: var(--holiday-color); }
+.date-cell.has-holiday { background: var(--day-holiday-color, var(--holiday-color)); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.date-mark.is-holiday:not(.marked), .date-cell.is-weekend .date-mark.is-holiday:not(.marked) { background: var(--day-holiday-color, var(--holiday-color)); }
 .date-mark.marked { background: var(--highlight-color); }
 
 .dialog-backdrop { position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; padding: 18px; background: #17231dcc; }
