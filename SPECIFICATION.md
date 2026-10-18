@@ -8,9 +8,11 @@ Build a responsive, client-side calendar planner that lets a person:
 - Optionally display public holidays.
 - Produce a clean one-page printout.
 
-The app should feel useful immediately, keep the calendar as its primary workspace, and require no account or application server.
+The app should feel useful immediately, keep the calendar as its primary
+workspace, and require no account or application server.
 
-This is an as-built product specification. It records the information needed to recreate or change the project without repeating known failures:
+This is an as-built product specification. It records the information needed
+to recreate or change the project without repeating known failures:
 - User-visible requirements.
 - Implementation constraints.
 - Edge cases.
@@ -18,16 +20,23 @@ This is an as-built product specification. It records the information needed to 
 
 ## 2. Scope and Principles
 
-- The planner is a single-page React application, not a marketing or landing page.
+- The planner is a single-page React application, not a marketing or landing
+	page.
 - A calendar month is one row; all months share one weekday-column grid.
-- Calendar calculations use UTC date construction and ISO date keys to avoid local-time boundary shifts.
-- Configuration and personal notes persist in the browser. Remote holiday records are runtime data and must be reloadable.
-- Printing is a first-class output. Screen layout and print layout must both be checked; browser screen appearance alone is not proof that print output is correct.
+- Calendar calculations use UTC date construction and ISO date keys to avoid
+	local-time boundary shifts.
+- Configuration and personal notes persist in the browser. Remote holiday
+	records are runtime data and must be reloadable.
+- Printing is a first-class output. Screen layout and print layout must both
+	be checked; browser screen appearance alone is not proof that print output
+	is correct.
 - Keep the implementation small and dependency-light. Use:
 	- React.
 	- TypeScript.
 	- CSS.
-	Do not introduce a backend or calendar service dependency beyond Nager.Date without a product decision.
+
+    Do not introduce a backend or calendar service dependency beyond Nager.Date
+	without a product decision.
 
 ## 3. Users and Core Stories
 
@@ -47,7 +56,8 @@ Acceptance criteria:
 	- Contain each day exactly once.
 	- Place each day in the correct weekday column.
 	- Show no days outside the selected months.
-- Every month shares the same weekday columns. Columns that contain no date anywhere in the selected range are removed.
+- Every month shares the same weekday columns. Columns that contain no date
+	anywhere in the selected range are removed.
 
 ### Story B: Add and manage personal plans
 
@@ -58,30 +68,42 @@ As a planner, I can manage a date's note and highlight:
 
 Acceptance criteria:
 - Clicking a date opens an accessible editor for that date.
-- Clicking anywhere in a date cell, not just on its number, opens the note editor.
+- Clicking anywhere in a date cell, not just on its number, opens the note
+	editor.
 - Note text is trimmed when saved and limited to 160 characters.
-- A note and its color appear in the corresponding calendar cell. Note text wraps within the cell and is clipped rather than overflowing into another cell.
+- A note and its color appear in the corresponding calendar cell. Note text
+	wraps within the cell and is clipped rather than overflowing into another
+	cell.
 - Choose note text foreground by comparing:
-	- Black.
-	- White.
-	Use whichever has the higher WCAG contrast ratio against the current background.
-- The Page tab includes a global millimetre-based day-note font-size slider alongside the other typography sliders. It updates all planner notes immediately and persists across reloads and backups.
-- The right side of the Day Note dialog shows an enlarged version of the selected planner cell. Its width-to-height ratio and content sizing accurately scale from that date cell, including:
+    - Black.
+    - White.
+
+    Use whichever has the higher WCAG contrast ratio against the current
+    background.
+- The Page tab includes a global millimetre-based day-note font-size slider
+	alongside the other typography sliders. It updates all planner notes
+	immediately and persists across reloads and backups.
+- The right side of the Day Note dialog shows an enlarged version of the
+	selected planner cell. Its width-to-height ratio and content sizing
+	accurately scale from that date cell, including:
 	- The date number.
 	- Note wrapping and size.
 	- Highlight appearance.
 	- Weekend appearance.
 	- Holiday appearance.
-- The enlarged cell stays synchronized with the planner whenever any of these change:
+- The enlarged cell stays synchronized with the planner whenever any of these
+	change:
 	- The draft note text or highlight.
 	- The note font size.
 	- Planner settings that alter the selected cell's:
 		- Dimensions.
 		- Typography.
 		- Background.
+
 	It reflects unsaved note edits immediately.
 - Saving an empty note with the default color removes the note.
-- Clearing a date removes its note and any date-specific holiday removal override.
+- Clearing a date removes its note and any date-specific holiday removal
+	override.
 - Date notes and colors survive reloads.
 
 ### Story C: Show public holidays
@@ -91,9 +113,13 @@ As a planner, I can add public holidays from:
 - Specific regions.
 
 Acceptance criteria:
-- Retrieve available countries from `https://nagerholidays.com/api/v4/Countries/Available`.
-- Retrieve each needed year from `https://nagerholidays.com/api/v4/Holidays/{countryCode}/{year}` and display records whose `holidayTypes` include `Public`.
-- Fetch holiday data as soon as a country is selected; keep the Region control disabled until the request succeeds.
+- Retrieve available countries from
+	`https://nagerholidays.com/api/v4/Countries/Available`.
+- Retrieve each needed year from
+	`https://nagerholidays.com/api/v4/Holidays/{countryCode}/{year}` and
+    display records whose `holidayTypes` include `Public`.
+- Fetch holiday data as soon as a country is selected; keep the Region control
+	disabled until the request succeeds.
 - A selected region includes:
 	- Holidays whose subdivision list is null (national).
 	- Holidays whose subdivision list includes that region.
@@ -102,7 +128,9 @@ Acceptance criteria:
 	- Country.
 	- Region.
 	- Weekend movement setting.
-	Do not add duplicate country/region entries; allow distinct regions from one country.
+
+    Do not add duplicate country/region entries; allow distinct regions from
+	one country.
 - Source order determines holiday color priority:
 	- The first source uses the primary holiday color.
 	- All later sources use the secondary color.
@@ -111,36 +139,46 @@ Acceptance criteria:
 	- Moved up or down.
 	- Removed.
 	Removing a source also clears its holiday-removal overrides.
-- Refresh every added source when the planner’s required year span changes. Include the preceding year when the range begins in January.
-- Communicate each of these states without making the rest of the planner unusable:
+- Refresh every added source when the planner’s required year span changes.
+	Include the preceding year when the range begins in January.
+- Communicate each of these states without making the rest of the planner
+	unusable:
 	- Loading.
 	- Success.
 	- Invalid country code.
 	- Network failure.
 	- HTTP errors.
-- The weekend-movement checkbox defaults on for `GB` and off for other countries; its value is captured when that source is added.
+- The weekend-movement checkbox defaults on for `GB` and off for other
+	countries; its value is captured when that source is added.
 - The app remains usable if the country list or holiday API cannot be reached.
 
 ### Story D: Handle weekend substitutes predictably
 
-As a planner, I can choose whether weekend-dated holidays are displayed on the next available weekday.
+As a planner, I can choose whether weekend-dated holidays are displayed on
+the next available weekday.
 
 Acceptance criteria:
-- Substitute movement is a user-controlled checkbox captured per source and defaults on for the United Kingdom.
-- When on, a Saturday or Sunday holiday moves forward to the next weekday that is not:
+- Substitute movement is a user-controlled checkbox captured per source and
+	defaults on for the United Kingdom.
+- When on, a Saturday or Sunday holiday moves forward to the next weekday
+	that is not:
 	- A weekend.
 	- Another actual holiday from that source.
 	- A date already assigned to a substitute from that source.
+
 	Different sources may land on the same date.
 - Multiple holidays with the same original date share the same substitute date.
 - When off, holidays remain on their source dates.
-- Removing a named holiday suppresses that source’s matching observance and persists across reloads. Other sources and other named holidays on that date remain visible.
+- Removing a named holiday suppresses that source’s matching observance and
+	persists across reloads. Other sources and other named holidays on that
+	date remain visible.
 - Removing and re-adding a source starts with its holidays restored.
 - Removing a holiday does not remove a note on the same date.
 
 ### Story E: Print the planner
 
-As a planner, I can choose a standard or custom paper size and orientation and print the calendar as a single page.
+As a planner, I can choose a standard or custom paper size and orientation
+and print the calendar as a single page.
 
 Acceptance criteria:
 - Support these standard paper sizes:
@@ -156,15 +194,21 @@ Acceptance criteria:
 - Print the planner and exclude:
 	- Application controls.
 	- Browser-only controls.
-- The calendar grid uses the available height in its print area without leaving an unexplained gap beneath it.
+- The calendar grid uses the available height in its print area without
+	leaving an unexplained gap beneath it.
 - Align date content to the top of each cell.
-- Give every date cell enough height for its day number to remain visible in print.
-- Day numbers remain visible and sit at the top-right of their own cells in print. The last month, including its day numbers, must not be clipped at the page edge.
-- Calendar typography scales with the physical date-cell width and month-row height, preserving the A4 landscape sizing as its baseline:
+- Give every date cell enough height for its day number to remain visible in
+	print.
+- Day numbers remain visible and sit at the top-right of their own cells in
+	print. The last month, including its day numbers, must not be clipped at
+    the page edge.
+- Calendar typography scales with the physical date-cell width and month-row
+	height, preserving the A4 landscape sizing as its baseline:
 	- Weekday labels follow column width.
 	- Month labels follow row height.
 	- Day numbers remain large enough to be visible.
-	- Note text is clipped or truncated within each cell on extreme custom paper proportions.
+	- Note text is clipped or truncated within each cell on extreme custom
+	   paper proportions.
 - The Page tab provides millimetre-based font-size sliders for:
 	- The title.
 	- Weekday labels.
@@ -173,7 +217,9 @@ Acceptance criteria:
 	- Day numbers.
 	- Day notes.
 	Their values apply to the same screen and print sheet.
-- Standard paper sizes use recommended font sizes scaled from the A4 values by the square root of the paper-area ratio. Use the same recommendations for:
+- Standard paper sizes use recommended font sizes scaled from the A4 values
+	by the square root of the paper-area ratio. Use the same recommendations
+	for:
 	- Landscape orientation.
 	- Portrait orientation.
 - For standard papers, the “Override font sizes” checkbox defaults off:
@@ -184,8 +230,10 @@ Acceptance criteria:
 		- Enable the sliders.
 		- Initialize their values to the current recommendations.
 	- Turning it off restores the recommendations.
-- Custom paper always forces the override checkbox on and keeps it checked and disabled.
-- All custom font-size slider maxima scale by the square root of the custom paper-area ratio relative to A4 and are rounded to 0.1 mm.
+- Custom paper always forces the override checkbox on and keeps it checked
+	and disabled.
+- All custom font-size slider maxima scale by the square root of the custom
+	paper-area ratio relative to A4 and are rounded to 0.1 mm.
 - Clamp values when a dimension change lowers a maximum.
 - Preserve these in print, subject to browser print-color settings:
 	- Selected colors.
@@ -202,9 +250,12 @@ Acceptance criteria:
 Print regression notes:
 - Ensure date controls do not collapse when the calendar is laid out for print.
 - Keep day numbers visible in every cell.
-- Use the available print area without leaving a visible gap beneath the calendar grid.
-- Keep date content at the top of its cell. These outcomes are required even if a browser's print renderer needs a different layout technique.
-- Browser print engines may differ. Diagnose using the user's actual print/PDF result when it disagrees with emulated print media.
+- Use the available print area without leaving a visible gap beneath the
+	calendar grid.
+- Keep date content at the top of its cell. These outcomes are required even
+	if a browser's print renderer needs a different layout technique.
+- Browser print engines may differ. Diagnose using the user's actual
+	print/PDF result when it disagrees with emulated print media.
 
 ### Story F: Back up and reset
 
@@ -219,7 +270,8 @@ Acceptance criteria:
 - When importing planner JSON:
 	- Merge missing settings with defaults.
 	- Normalize legacy highlight colors.
-	- Show an error for malformed or incompatible data without replacing the current planner.
+	- Show an error for malformed or incompatible data without replacing the
+	    current planner.
 - Import clears loaded holiday records; the user can load them again.
 - A confirmed “Clear all” resets:
 	- Configuration and notes.
@@ -233,7 +285,8 @@ Acceptance criteria:
 As a planner, I can replace the default title with my own.
 
 Acceptance criteria:
-- Show a title above the table. By default, use the date range, such as "March 2026 — April 2027".
+- Show a title above the table. By default, use the date range, such as
+	"March 2026 — April 2027".
 - Provide a "Use a custom title" checkbox that defaults off:
 	- When checked, reveal a text input with a maximum of 80 characters.
 	- Show the default title as the input placeholder.
@@ -243,7 +296,8 @@ Acceptance criteria:
 
 ### Story H: Colour themes
 
-As a planner, I can choose or build a colour scheme, including the table heading colour.
+As a planner, I can choose or build a colour scheme, including the table
+heading colour.
 
 Acceptance criteria:
 - A theme has six colours:
@@ -273,8 +327,11 @@ Acceptance criteria:
 - Choose text on table headings and accent-coloured surfaces by comparing:
 	- Black.
 	- White.
-	Use whichever has the higher WCAG contrast ratio against the background. Choose white when relative luminance is below 0.179.
-- When "Custom" is selected, allow the user to name and save the current colours.
+
+    Use whichever has the higher WCAG contrast ratio against the background.
+	Choose white when relative luminance is below 0.179.
+- When "Custom" is selected, allow the user to name and save the current
+	colours.
 - Saving an existing name overwrites that saved theme.
 - Saved themes:
 	- Appear under "Saved" in the theme list.
@@ -282,7 +339,8 @@ Acceptance criteria:
 	- Persist in local-storage key `year-planner:themes:v1`.
 	- Are not included in backups.
 - Ignore malformed stored themes.
-- A planner referring to a saved theme that no longer exists is treated as "Custom".
+- A planner referring to a saved theme that no longer exists is treated as
+	"Custom".
 
 ## 4. Configuration and Persistence
 
@@ -331,19 +389,27 @@ Acceptance criteria:
 	- Year number: 5 mm.
 	- Day number: 5 mm.
 	- Day notes: 4 mm.
-	Each maximum is multiplied by the square root of paper area divided by A4 area. Minimums remain:
+
+	Each maximum is multiplied by the square root of paper area divided by A4
+	area. Minimums remain:
 	- Title: 2 mm.
 	- Day names: 0.8 mm.
 	- Month names: 1.5 mm.
 	- Year number: 1 mm.
 	- Day number: 1 mm.
 	- Day notes: 0.5 mm.
-- The day-note font-size slider uses the same paper-scaled recommendations and override behavior as the other typography sliders. Its A4 default is 1.8 mm and its A4 range is 0.5–4 mm in 0.1 mm increments. Older saved planners and backups missing this setting use the paper-scaled recommendation.
+- The day-note font-size slider uses the same paper-scaled recommendations
+	and override behavior as the other typography sliders. Its A4 default is
+	1.8 mm and its A4 range is 0.5–4 mm in 0.1 mm increments. Older saved
+	planners and backups missing this setting use the paper-scaled
+	recommendation.
 - For saved or imported planners:
-	- Convert a legacy pixel-based day-number size to millimetres when it is the only saved size.
+	- Convert a legacy pixel-based day-number size to millimetres when it is
+	   the only saved size.
 	- Use paper-scaled recommendations for missing new font-size settings.
 - Saved custom themes persist separately under `year-planner:themes:v1`.
-- Legacy saved themes without a secondary holiday color derive one from the primary color.
+- Legacy saved themes without a secondary holiday color derive one from the
+	primary color.
 - Defaults:
 	- Current month and year.
 	- 14 months.
@@ -355,12 +421,14 @@ Acceptance criteria:
 	- Recommended A4 font sizes.
 	- Font-size overrides off.
 - Backups lacking theme fields import as the Monochrome defaults.
-- Backups with colours but no theme name import as "Custom" with the legacy heading colour `#f0f1ef`.
+- Backups with colours but no theme name import as "Custom" with the legacy
+	heading colour `#f0f1ef`.
 - Treat local storage as optional:
 	- Malformed storage must not prevent the app from starting.
 	- Unavailable storage must not prevent the app from starting.
 	- Show a useful status when changes cannot be saved.
-- Migrate older saved or imported named highlight colors to their corresponding hex colors:
+- Migrate older saved or imported named highlight colors to their
+	corresponding hex colors:
 	- `leaf`.
 	- `coral`.
 	- `sky`.
@@ -386,7 +454,8 @@ Acceptance criteria:
 - The on-screen planner:
 	- Uses the exact aspect ratio of the selected paper and orientation.
 	- Is laid out at true paper size, including the 5 mm margin.
-	- Is scaled to fit the available width, with a scale limited to 0.5–2. Below that scale, the preview scrolls horizontally.
+	- Is scaled to fit the available width, with a scale limited to 0.5–2.
+        Below that scale, the preview scrolls horizontally.
 	- Uses the same styles as print, so it shows what will be printed.
 	- Keeps date cells clickable.
 - Keep the calendar preview central.
@@ -396,12 +465,16 @@ Acceptance criteria:
 	- Weekends.
 	- Public holidays.
 	- Notes.
-	Holiday fill takes precedence over weekend fill. Do not specially format the current date.
+
+	Holiday fill takes precedence over weekend fill. Do not specially format
+	the current date.
 - Day-note text:
 	- Wraps within its date cell.
 	- Is clipped at the cell boundary.
-	- Uses whichever of black or white has the higher WCAG contrast ratio against its rendered background.
-- The Day Note dialog places an enlarged selected-date cell beside the editor. Scale these proportionally from the current planner cell:
+	- Uses whichever of black or white has the higher WCAG contrast ratio
+	    against its rendered background.
+- The Day Note dialog places an enlarged selected-date cell beside the
+  editor. Scale these proportionally from the current planner cell:
 	- Width.
 	- Height.
 	- Content.
@@ -418,7 +491,8 @@ Acceptance criteria:
 	- Use the configured paper orientation and size.
 	- Retain day numbers.
 	- Avoid clipping the final month.
-- External web fonts may enhance the visual design, but fallbacks must remain readable if font loading fails.
+- External web fonts may enhance the visual design, but fallbacks must remain
+    readable if font loading fails.
 
 ## 6. Technical Requirements
 
@@ -494,7 +568,8 @@ Before calling a rebuild complete:
 	- Then change layout rules if needed.
 10. Verify theme behavior:
 	- Test each built-in theme and a custom colour.
-	- Confirm heading and month-label text switches between black and white for light and dark backgrounds.
+	- Confirm heading and month-label text switches between black and white for
+        light and dark backgrounds.
 	- Verify primary and secondary holiday colours.
 	- Save a named theme.
 	- Reload and select the named theme.
