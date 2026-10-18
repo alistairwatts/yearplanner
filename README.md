@@ -31,6 +31,19 @@ npm run build
 npm run preview
 ```
 
+## Deploy
+
+The app can be hosted by any web server that serves static files; no Node.js server is needed in production. From the project directory, create the production build:
+
+```sh
+npm ci
+npm run build
+```
+
+Upload the **contents** of the generated `dist/` directory to the web server's document root. The default Vite configuration serves the app from the domain root (for example, `https://example.com/`). If deploying under a subdirectory (for example, `https://example.com/planner/`), set Vite's `base` option to that path in `vite.config.ts` before building.
+
+The browser needs internet access to load public holidays from Nager.Date. Planner settings and notes are stored in each user's browser.
+
 ## Technology
 
 React 19, TypeScript, and Vite 6. The app is a client-side single-page application; it has no application server or database. Holiday data comes from the Nager.Date v4 API:
